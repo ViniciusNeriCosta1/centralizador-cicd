@@ -5,6 +5,10 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [2.1.0] - 2026-11-13
+
+Minor: só acrescenta. Quem usa `@v2` continua funcionando sem mudar nada.
+
 ### Adicionado
 - `cicd dep-audit`, a action `dependency-audit` e o workflow reutilizável
   `dependency-audit.yml`: política de dependências sobre o `govulncheck`, por
