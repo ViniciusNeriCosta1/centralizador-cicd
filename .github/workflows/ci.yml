@@ -91,9 +91,65 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     with:
       working-directory: testdata/tf/limpo
       versao: ${{ github.sha }}
+
+  # Prova (sem nuvem) o que o OIDC entrega: a plataforma emite um token com o
+  # `sub` do repositório e do evento. É esse `sub` que a trust policy da role
+  # confere (examples/aws-oidc-trust.tf). O token só vai ao endpoint do GitHub.
+  oidc-claims:
+    name: Claims do token OIDC
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Pede o token e confere audience e subject
+        env:
+          REPO: ${{ github.repository }}
+          REPO_ID: ${{ github.repository_id }}
+          OWNER: ${{ github.repository_owner }}
+          OWNER_ID: ${{ github.repository_owner_id }}
+          EVENTO: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          resp="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")"
+          token="$(printf '%s' "$resp" | jq -r .value)"
+          echo "::add-mask::$token"
+          claims="$(printf '%s' "$token" | python3 -I -c '
+          import sys, base64, json
+          p = sys.stdin.read().split(".")[1]
+          print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))))')"
+          echo "$claims" | jq '{iss, aud, sub, repository, ref, event_name, job_workflow_ref}'
+
+          # Repositórios criados depois de 15/07/2026 (ou que optaram) usam o
+          # `sub` imutável, com os IDs numéricos. Os demais, o formato antigo.
+          if [ "$EVENTO" = "pull_request" ]; then
+            fim="pull_request"
+          else
+            fim="ref:$REF"
+          fi
+          nome="${REPO#*/}"
+          antigo="repo:$REPO:$fim"
+          imutavel="repo:$OWNER@$OWNER_ID/$nome@$REPO_ID:$fim"
+          aud="$(echo "$claims" | jq -r .aud)"
+          sub="$(echo "$claims" | jq -r .sub)"
+          [ "$aud" = "sts.amazonaws.com" ] || { echo "aud inesperado: $aud"; exit 1; }
+          if [ "$sub" = "$imutavel" ]; then
+            formato="imutável"
+          elif [ "$sub" = "$antigo" ]; then
+            formato="antigo (por nome)"
+          else
+            echo "sub inesperado: $sub"
+            echo "esperado: $imutavel"
+            echo "      ou: $antigo"
+            exit 1
+          fi
+          echo "sub e aud conferem, formato $formato: $sub"
 
   # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
   # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
@@ -164,6 +220,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write
     with:
       working-directory: testdata/tf/limpo
       versao: ${{ github.sha }}
@@ -180,6 +237,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     with:
       working-directory: testdata/tf/recria-estado
       versao: ${{ github.sha }}
@@ -191,6 +249,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write
     with:
       working-directory: testdata/tf/recria-estado
       versao: ${{ github.sha }}

@@ -16,9 +16,13 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
+  id-token: write   # pede o token OIDC (obrigatório, mesmo sem usar a AWS)
 
 jobs:
   apply:
     uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/apply.yml@v1
     with:
       working-directory: infra
+      # Role do apply: a trust policy só aceita o push na branch de produção.
+      # aws-role-arn: arn:aws:iam::123456789012:role/cicd-apply
+      # aws-region: us-east-1

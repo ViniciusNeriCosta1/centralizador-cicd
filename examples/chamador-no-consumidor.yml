@@ -12,9 +12,13 @@ on:
 permissions:
   contents: read
   pull-requests: write   # publica o plano revisado, que o apply usa
+  id-token: write        # pede o token OIDC (obrigatório, mesmo sem usar a AWS)
 
 jobs:
   plan-gate:
     uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v1
     with:
       working-directory: infra
+      # Para módulos na AWS: role só de leitura (veja aws-oidc-trust.tf).
+      # aws-role-arn: arn:aws:iam::123456789012:role/cicd-plan
+      # aws-region: us-east-1
