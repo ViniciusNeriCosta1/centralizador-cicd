@@ -151,6 +151,107 @@ jobs:
           fi
           echo "sub e aud conferem, formato $formato: $sub"
 
+  # Gate de tags, do jeito que um consumidor o usa. Os planos são REAIS (gerados
+  # pelo Terraform com o provider da AWS, sem nuvem): o `tags_all` deles já traz
+  # o default_tags misturado.
+  dogfood-tags:
+    name: Dogfood (tag-check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Plano com as três tags (deve liberar)
+        uses: ./.github/actions/tag-check
+        with:
+          plan-json: testdata/real/tags-ok.json
+
+      - name: Plano sem Environment e Owner (deve reprovar)
+        id: sem-tags
+        continue-on-error: true
+        uses: ./.github/actions/tag-check
+        with:
+          plan-json: testdata/real/tags-faltando.json
+
+      - name: Entrada que não é plano (deve reprovar, nunca liberar)
+        id: nao-e-plano
+        continue-on-error: true
+        uses: ./.github/actions/tag-check
+        with:
+          plan-json: testdata/plans/not-a-plan.json
+
+      - name: Confirma que os dois cenários reprovaram de verdade
+        env:
+          SEM_TAGS: ${{ steps.sem-tags.outcome }}
+          NAO_E_PLANO: ${{ steps.nao-e-plano.outcome }}
+        run: |
+          [ "$SEM_TAGS" = "failure" ] || { echo "sem tags: esperava failure, veio $SEM_TAGS"; exit 1; }
+          [ "$NAO_E_PLANO" = "failure" ] || { echo "não é plano: esperava failure, veio $NAO_E_PLANO"; exit 1; }
+
+  # Formatação e validade. Os dois módulos inválidos erram por um motivo só cada
+  # um (um está mal formatado e válido; o outro bem formatado e inválido), então
+  # cada reprovação aponta para a checagem certa.
+  dogfood-validate:
+    name: Dogfood (terraform-validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Módulo sem nuvem (deve liberar)
+        uses: ./.github/actions/terraform-validate
+        with:
+          working-directory: testdata/tf/limpo
+
+      - name: Exemplo de trust policy OIDC (deve liberar)
+        uses: ./.github/actions/terraform-validate
+        with:
+          working-directory: examples
+
+      - name: Mal formatado (deve reprovar)
+        id: formatacao
+        continue-on-error: true
+        uses: ./.github/actions/terraform-validate
+        with:
+          working-directory: testdata/tf-invalidos/formatacao
+
+      - name: Referência inexistente (deve reprovar)
+        id: invalido
+        continue-on-error: true
+        uses: ./.github/actions/terraform-validate
+        with:
+          working-directory: testdata/tf-invalidos/invalido
+
+      - name: Confirma que os dois reprovaram de verdade
+        env:
+          FORMATACAO: ${{ steps.formatacao.outcome }}
+          INVALIDO: ${{ steps.invalido.outcome }}
+        run: |
+          [ "$FORMATACAO" = "failure" ] || { echo "formatação: esperava failure, veio $FORMATACAO"; exit 1; }
+          [ "$INVALIDO" = "failure" ] || { echo "inválido: esperava failure, veio $INVALIDO"; exit 1; }
+
+  # O workflow reutilizável de validação, chamado como um consumidor chama.
+  contrato-validate:
+    name: Contrato do workflow de validação
+    uses: ./.github/workflows/terraform-validate.yml
+    permissions:
+      contents: read
+    with:
+      working-directory: testdata/tf/limpo
+      versao: ${{ github.sha }}
+
+  # O plan-gate.yml inteiro com um módulo que TEM tags (aws_s3_bucket com
+  # default_tags): prova que o passo de tags roda no workflow e libera.
+  contrato-tags:
+    name: Contrato do workflow com gate de tags
+    uses: ./.github/workflows/plan-gate.yml
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    with:
+      working-directory: testdata/tf/tags-ok
+      plan-args: -refresh=false
+      versao: ${{ github.sha }}
+
   # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
   # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
   # reprova passaria no CI. Os comentários são fixtures no formato da API.

@@ -1,0 +1,5 @@
+{
+  "severity": "obrigatoria",
+  "required_tags": ["Project", "Environment", "Owner"],
+  "ignore_types": []
+}

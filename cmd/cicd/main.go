@@ -5,6 +5,7 @@
 //	cicd plan-gate     -plan plano.json -policy politica.json [-approved]
 //	cicd review-comment -plan plano.json [-dir .]
 //	cicd reviewed-id   -comments comentarios.json [-dir .]
+//	cicd tag-check     -plan plano.json -policy politica-de-tags.json
 //	cicd apply-gate    -plan plano.json -policy politica.json [-comments comentarios.json] [-dir .] [-approved]
 //
 // Códigos de saída: 0 liberado, 1 reprovado pelo gate, 2 erro de uso ou de leitura.
@@ -22,6 +23,7 @@ import (
 	"centralizador-cicd/internal/gate"
 	"centralizador-cicd/internal/plan"
 	"centralizador-cicd/internal/policy"
+	"centralizador-cicd/internal/tags"
 )
 
 func main() {
@@ -32,6 +34,7 @@ const uso = `uso:
   cicd plan-gate      -plan <plano.json> -policy <politica.json> [-approved]
   cicd review-comment -plan <plano.json> [-dir .]
   cicd reviewed-id    -comments <comentarios.json> [-dir .]
+  cicd tag-check      -plan <plano.json> -policy <politica-de-tags.json>
   cicd apply-gate     -plan <plano.json> -policy <politica.json> [-comments <comentarios.json>] [-dir .] [-approved]`
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -48,6 +51,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return reviewedID(args[1:], stdout, stderr)
 	case "apply-gate":
 		return applyGate(args[1:], stdout, stderr)
+	case "tag-check":
+		return tagCheck(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "subcomando desconhecido: %q\n", args[0])
 		return 2
@@ -214,4 +219,32 @@ func applyGate(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stdout, "\nResultado do apply-gate: liberado.")
 	return 0
+}
+
+// tag-check confere as tags obrigatórias dos recursos que o plano cria ou atualiza.
+func tagCheck(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("tag-check", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	planPath := fs.String("plan", "", "plano em JSON (saída de `terraform show -json`)")
+	policyPath := fs.String("policy", "", "política de tags")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *planPath == "" || *policyPath == "" {
+		fmt.Fprintln(stderr, "erro: -plan e -policy são obrigatórios")
+		return 2
+	}
+	pol, err := tags.Load(*policyPath)
+	if err != nil {
+		fmt.Fprintln(stderr, "erro:", err)
+		return 2
+	}
+	p, err := loadPlan(*planPath)
+	if err != nil {
+		fmt.Fprintln(stderr, "erro:", err)
+		return 2
+	}
+	res := tags.Evaluate(p, pol)
+	res.Render(stdout)
+	return res.ExitCode()
 }

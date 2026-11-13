@@ -24,6 +24,16 @@ provider "aws" {
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
   skip_region_validation      = true
+
+  # As tags obrigatórias (config/tag-policy.json), para a demonstração do
+  # label testar só a recriação.
+  default_tags {
+    tags = {
+      Project     = "demo"
+      Environment = "dev"
+      Owner       = "plataforma"
+    }
+  }
 }
 
 resource "aws_s3_bucket" "demo" {

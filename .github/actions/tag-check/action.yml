@@ -1,0 +1,39 @@
+name: tag-check
+description: Reprova recursos do plano do Terraform (JSON) sem as tags obrigatórias.
+
+inputs:
+  plan-json:
+    description: Caminho do plano em JSON (saída de `terraform show -json`).
+    required: true
+
+# Não existe input de política: todo consumidor recebe a mesma regra, a que
+# está em config/tag-policy.json na versão da ferramenta que foi escolhida.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache: false
+
+    - name: Compila o cicd
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      run: go build -trimpath -o "$RUNNER_TEMP/cicd" ./cmd/cicd
+
+    - name: Gate de tags obrigatórias
+      shell: bash
+      env:
+        PLAN_JSON: ${{ inputs.plan-json }}
+        POLICY: ${{ github.action_path }}/../../../config/tag-policy.json
+      run: |
+        set -o pipefail
+        "$RUNNER_TEMP/cicd" tag-check -plan "$PLAN_JSON" -policy "$POLICY" | tee "$RUNNER_TEMP/relatorio-tags.txt"
+        status=$?
+        {
+          echo '### tag-check'
+          echo '```'
+          cat "$RUNNER_TEMP/relatorio-tags.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$status"
