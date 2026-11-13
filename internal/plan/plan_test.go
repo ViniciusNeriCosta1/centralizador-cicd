@@ -80,6 +80,28 @@ func TestReplaceAttributesMisturaNomeEIndice(t *testing.T) {
 	}
 }
 
+func TestDestroyed(t *testing.T) {
+	casos := []struct {
+		fixture string
+		want    []string
+	}{
+		{"plans/no-changes.json", []string{}},
+		{"plans/clean.json", []string{}},
+		{"plans/destroy-only.json", []string{"aws_s3_bucket.logs"}},
+		{"plans/replace-common.json", []string{"aws_instance.web"}},
+		{"plans/create-before-destroy.json", []string{"aws_security_group.web"}},
+		// recriação conta; data source não; ordem alfabética.
+		{"plans/mixed.json", []string{"aws_ecs_task_definition.app", "aws_instance.web", "aws_rds_cluster.db"}},
+	}
+	for _, c := range casos {
+		t.Run(c.fixture, func(t *testing.T) {
+			if got := load(t, c.fixture).Destroyed(); !reflect.DeepEqual(got, c.want) {
+				t.Errorf("Destroyed = %v, quer %v", got, c.want)
+			}
+		})
+	}
+}
+
 // O plano real vem do Terraform de verdade (scripts/gerar-plano-real.sh):
 // prova que o parser lê o formato que o Terraform produz, não só os JSONs
 // escritos à mão.

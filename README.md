@@ -122,6 +122,63 @@ Em um PR com o label `demo-recriacao`:
 O job só roda com `demo-recriacao`, para PRs comuns não ficarem vermelhos de
 propósito.
 
+### Apply gateado
+
+Revisar um plano no pull request só vale se o apply executar **o que foi
+revisado**. Entre a revisão e o merge o estado da infraestrutura pode mudar, e o
+plano do apply pode destruir algo que ninguém viu.
+
+O fluxo do [`apply.yml`](.github/workflows/apply.yml) (chamado em push na branch
+de produção, exemplo em
+[`examples/chamador-apply-no-consumidor.yml`](examples/chamador-apply-no-consumidor.yml)):
+
+1. **No pull request**, o `plan-gate.yml` publica um comentário com a lista de
+   recursos que serão destruídos (resumo legível + marcador invisível).
+2. **No merge**, o `apply.yml` gera o plano, acha o pull request do commit e
+   compara a destruição do plano do apply com a lista revisada.
+3. O gate roda e, só se liberar, o workflow aplica **o arquivo do plano** que o
+   gate avaliou. Não existe um segundo plano que o gate nunca viu.
+
+O status do delta:
+
+| Status | Significa | Resultado |
+|---|---|---|
+| `nada-a-destruir` | o apply não destrói nada | libera, sem precisar de referência |
+| `dentro-do-revisado` | toda destruição estava no plano revisado | libera |
+| `fora-do-revisado` | destrói algo que o revisado não previa | **bloqueia** |
+| `sem-referencia` | há destruição e não existe plano revisado | **bloqueia** |
+
+Destruir **menos** do que foi revisado é seguro e libera. O gate de recriação de
+recursos sensíveis continua valendo no apply, e o label `destruicao-aprovada`
+libera os dois.
+
+Pontos de desenho:
+
+- **Só o bot vale.** Qualquer pessoa pode comentar em um pull request, e um
+  comentário forjado com "tudo revisado" liberaria qualquer destruição. Só conta
+  o comentário de `github-actions[bot]`. Isso é testado, inclusive com um
+  comentário forjado (`testdata/comments/forjado-instance-web.json`).
+- **Marcador ilegível do bot é erro**, e não "sem referência": cair para um
+  comentário antigo compararia contra um plano que já não vale.
+- **Vários módulos no mesmo PR.** O marcador leva o diretório (`dir`), então
+  cada módulo tem a sua referência.
+- **O marcador não quebra com `-->`.** O JSON é escrito com `<` e `>` escapados.
+
+A demonstração sem nuvem está em
+[`testdata/tf/recria-estado`](testdata/tf/recria-estado): um estado local diz que
+um `terraform_data` existe com `"v1"` e o código pede `"v2"`, o que recria o
+recurso. No pull request o plano revisado lista a destruição; no push na `main`
+o job `apply-e2e` do CI acha o pull request do commit, compara e aplica.
+
+Limites conhecidos:
+
+- O label vale para o pull request como está no momento do merge; não há
+  aprovação por commit.
+- O comentário do bot é a referência. Outro workflow do mesmo repositório que
+  use o `GITHUB_TOKEN` também aparece como esse autor: a confiança é no
+  repositório, não em um único job.
+- Sem login na nuvem, sem ambiente protegido e sem `-target`.
+
 ## Como rodar
 
 Com Go instalado:
@@ -161,6 +218,10 @@ cicd plan-gate -plan plano.json -policy config/plan-policy.json
   Terraform produz, e não só os JSONs escritos à mão.
 - Regra de recriação coberta: só destruir não conta, `create_before_destroy`
   conta, *data sources* não contam.
+- **Apply gateado**: comentário forjado por quem não é o bot, marcador ilegível,
+  comentários em várias páginas (`gh api --paginate`), módulo diferente no mesmo
+  PR e endereço com `-->`. Cada cenário que deve reprovar no CI é conferido
+  depois de rodar.
 
 ## Estrutura
 
@@ -168,10 +229,14 @@ cicd plan-gate -plan plano.json -policy config/plan-policy.json
 cmd/cicd/            ponto de entrada e códigos de saída
 internal/plan/       leitura do plano em JSON
 internal/policy/     carga e validação da política
-internal/gate/       regras e relatório
+internal/gate/       regras e relatório do gate de recriação
+internal/delta/      destruição do apply x plano revisado; comentário do PR
 config/              política distribuída
-testdata/            planos de exemplo (à mão e real)
+testdata/            planos, comentários de PR e módulos de exemplo
+examples/            como um projeto consumidor chama os workflows
 scripts/             gerador do plano real
+.github/actions/     plan-gate e apply-gate
+.github/workflows/   plan-gate, apply, release, CI e demonstração
 ```
 
 ## Planejado
@@ -179,7 +244,6 @@ scripts/             gerador do plano real
 Ainda **não implementado**; entra por etapas, cada uma com testes:
 
 - Login na nuvem (OIDC) no workflow reutilizável, para planos com backend remoto.
-- Gate de *apply*: aplicar o próprio arquivo do plano que foi avaliado.
 - Validação de Terraform (formato, `validate`, tags obrigatórias).
 - Auditoria de dependências com política de severidade em arquivo.
 - Espera de *rollout* por estado, não por tempo fixo, testada contra uma AWS

@@ -88,6 +88,109 @@ jobs:
   contrato:
     name: Contrato do workflow reutilizável
     uses: ./.github/workflows/plan-gate.yml
+    permissions:
+      contents: read
+      pull-requests: write
     with:
       working-directory: testdata/tf/limpo
+      versao: ${{ github.sha }}
+
+  # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
+  # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
+  # reprova passaria no CI. Os comentários são fixtures no formato da API.
+  dogfood-apply:
+    name: Dogfood (apply-gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Destruição que estava no plano revisado (deve liberar)
+        uses: ./.github/actions/apply-gate
+        with:
+          plan-json: testdata/plans/replace-common.json
+          comments-json: testdata/comments/revisado-instance-web.json
+
+      - name: Destruição sem plano revisado (deve reprovar)
+        id: sem-referencia
+        continue-on-error: true
+        uses: ./.github/actions/apply-gate
+        with:
+          plan-json: testdata/plans/replace-common.json
+          comments-json: testdata/comments/sem-referencia.json
+
+      - name: Destruição fora do plano revisado (deve reprovar)
+        id: fora-do-revisado
+        continue-on-error: true
+        uses: ./.github/actions/apply-gate
+        with:
+          plan-json: testdata/plans/replace-common.json
+          comments-json: testdata/comments/revisado-bucket-logs.json
+
+      - name: Comentário forjado por quem não é o bot (deve reprovar)
+        id: forjado
+        continue-on-error: true
+        uses: ./.github/actions/apply-gate
+        with:
+          plan-json: testdata/plans/replace-common.json
+          comments-json: testdata/comments/forjado-instance-web.json
+
+      - name: Confirma que os três cenários reprovaram de verdade
+        env:
+          SEM_REFERENCIA: ${{ steps.sem-referencia.outcome }}
+          FORA: ${{ steps.fora-do-revisado.outcome }}
+          FORJADO: ${{ steps.forjado.outcome }}
+        run: |
+          status=0
+          for par in "sem-referencia=$SEM_REFERENCIA" "fora-do-revisado=$FORA" "forjado=$FORJADO"; do
+            if [ "${par#*=}" != "failure" ]; then
+              echo "${par%%=*}: esperava failure, veio ${par#*=}"
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Destruição sem referência, mas aprovada por um humano (deve liberar)
+        uses: ./.github/actions/apply-gate
+        with:
+          plan-json: testdata/plans/replace-common.json
+          approved: "true"
+
+  # O workflow de apply inteiro: init, plan, busca do pull request, gate e
+  # apply do arquivo do plano. O módulo só cria um terraform_data (sem nuvem),
+  # então o apply é inofensivo, e o estado some com o runner.
+  contrato-apply:
+    name: Contrato do workflow de apply
+    uses: ./.github/workflows/apply.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      working-directory: testdata/tf/limpo
+      versao: ${{ github.sha }}
+
+  # Demonstração de ponta a ponta do apply COM destruição, sem nuvem.
+  #
+  # Em pull request, o plan-gate publica (via bot) a destruição prevista de
+  # testdata/tf/recria-estado. No push na main, o apply acha o pull request do
+  # commit, lê esse comentário e só libera porque a destruição estava nele.
+  # É o único job que exercita a busca do PR por commit com um merge de verdade.
+  contrato-recriacao:
+    name: Plano revisado com destruição (publica no PR)
+    uses: ./.github/workflows/plan-gate.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working-directory: testdata/tf/recria-estado
+      versao: ${{ github.sha }}
+
+  apply-e2e:
+    name: Apply com destruição (só no push na main)
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/apply.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      working-directory: testdata/tf/recria-estado
       versao: ${{ github.sha }}

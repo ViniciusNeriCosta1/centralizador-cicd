@@ -19,6 +19,9 @@ jobs:
   demo:
     if: contains(github.event.pull_request.labels.*.name, 'demo-recriacao')
     uses: ./.github/workflows/plan-gate.yml
+    permissions:
+      contents: read
+      pull-requests: write
     with:
       working-directory: testdata/tf/recria-bucket
       plan-args: -refresh=false

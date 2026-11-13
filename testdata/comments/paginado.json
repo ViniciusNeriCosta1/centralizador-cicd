@@ -1,0 +1,2 @@
+[{"id": 1, "user": {"login": "github-actions[bot]"}, "body": "### Plano revisado\n\n<!-- cicd:revisado {\"dir\":\"infra\",\"destroy\":[\"aws_instance.outro\"]} -->\n"}]
+[{"id": 2, "user": {"login": "github-actions[bot]"}, "body": "### Plano revisado\n\n<!-- cicd:revisado {\"dir\":\".\",\"destroy\":[\"aws_instance.web\"]} -->\n"}]

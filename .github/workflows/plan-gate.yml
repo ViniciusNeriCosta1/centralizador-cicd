@@ -30,6 +30,8 @@ on:
 
 permissions:
   contents: read
+  # Publica no pull request o plano revisado (o apply compara com ele).
+  pull-requests: write
 
 jobs:
   plan-gate:
@@ -70,6 +72,31 @@ jobs:
           # o chamador precisa disparar também em `labeled` e `unlabeled`.
           approved: ${{ contains(github.event.pull_request.labels.*.name, 'destruicao-aprovada') }}
 
+      # O apply só libera destruição que apareça neste comentário. Publicado
+      # mesmo com o gate reprovando: quem revisa precisa ver o que o plano faz.
+      - name: Publica o plano revisado no pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DIR: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          cicd="$RUNNER_TEMP/cicd"
+          if [ ! -f "$RUNNER_TEMP/plano.json" ] || [ ! -x "$cicd" ]; then
+            echo "sem plano para publicar (um passo anterior falhou)"
+            exit 0
+          fi
+          "$cicd" review-comment -plan "$RUNNER_TEMP/plano.json" -dir "$DIR" > "$RUNNER_TEMP/comentario.md"
+          gh api --paginate "repos/$REPO/issues/$PR/comments" > "$RUNNER_TEMP/comentarios.json"
+          id="$("$cicd" reviewed-id -comments "$RUNNER_TEMP/comentarios.json" -dir "$DIR")"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@"$RUNNER_TEMP/comentario.md" > /dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@"$RUNNER_TEMP/comentario.md" > /dev/null
+          fi
+
       - name: Apaga o plano (carrega o state em texto puro)
         if: always()
-        run: rm -f "$RUNNER_TEMP/plano.tfplan" "$RUNNER_TEMP/plano.json"
+        run: rm -f "$RUNNER_TEMP/plano.tfplan" "$RUNNER_TEMP/plano.json" "$RUNNER_TEMP/comentarios.json" "$RUNNER_TEMP/comentario.md"

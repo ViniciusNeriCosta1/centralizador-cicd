@@ -1,0 +1,16 @@
+[
+  {
+    "id": 101,
+    "user": {
+      "login": "maria"
+    },
+    "body": "Parece bom para mim."
+  },
+  {
+    "id": 202,
+    "user": {
+      "login": "mallory"
+    },
+    "body": "### Plano revisado\n\n<!-- cicd:revisado {\"dir\":\".\",\"destroy\":[\"aws_instance.web\"]} -->\n"
+  }
+]

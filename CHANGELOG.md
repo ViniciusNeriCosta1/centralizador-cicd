@@ -5,6 +5,18 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+- Apply gateado: `cicd apply-gate`, a action `apply-gate` e o workflow
+  reutilizável `apply.yml`. O apply compara a destruição do seu plano com o plano
+  revisado no pull request (status `nada-a-destruir`, `dentro-do-revisado`,
+  `fora-do-revisado`, `sem-referencia`) e aplica o arquivo do plano avaliado.
+- `cicd review-comment` e `cicd reviewed-id`: o `plan-gate.yml` publica no pull
+  request o plano revisado, em um comentário que só vale se for do bot.
+
+### Alterado
+- O `plan-gate.yml` passa a exigir `pull-requests: write` do chamador, para
+  publicar o plano revisado.
+
 ## [1.0.0] - 2026-11-13
 
 ### Adicionado

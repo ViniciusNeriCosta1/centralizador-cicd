@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -48,6 +49,32 @@ func Parse(r io.Reader) (*Plan, error) {
 		return nil, errors.New("plano inválido: falta format_version (use a saída de `terraform show -json <plano>`)")
 	}
 	return &p, nil
+}
+
+// Destroyed lista os endereços dos recursos gerenciados que serão destruídos,
+// inclusive os que serão recriados (a recriação destrói o antigo). Sem
+// repetição e em ordem alfabética, para a comparação ser estável.
+func (p *Plan) Destroyed() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, rc := range p.ResourceChanges {
+		if rc.Mode != "managed" || !rc.Change.destroys() || seen[rc.Address] {
+			continue
+		}
+		seen[rc.Address] = true
+		out = append(out, rc.Address)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (c Change) destroys() bool {
+	for _, a := range c.Actions {
+		if a == "delete" {
+			return true
+		}
+	}
+	return false
 }
 
 // IsReplacement diz se o recurso será destruído e recriado.
