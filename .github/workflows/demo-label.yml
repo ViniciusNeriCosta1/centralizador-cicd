@@ -1,0 +1,25 @@
+# Demonstração, em pull request de verdade, do label de aprovação.
+#
+# Só roda em PR com o label `demo-recriacao`, para os PRs comuns não ficarem
+# vermelhos de propósito. A pasta testdata/tf/recria-bucket tem um plano que
+# recria um bucket (aws_s3_bucket é tipo sensível), sem nuvem e sem credenciais:
+#
+#   1. PR com `demo-recriacao`                      -> o gate REPROVA
+#   2. PR com `demo-recriacao` + `destruicao-aprovada` -> o gate LIBERA
+name: Demonstração do label
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    if: contains(github.event.pull_request.labels.*.name, 'demo-recriacao')
+    uses: ./.github/workflows/plan-gate.yml
+    with:
+      working-directory: testdata/tf/recria-bucket
+      plan-args: -refresh=false
+      versao: ${{ github.sha }}

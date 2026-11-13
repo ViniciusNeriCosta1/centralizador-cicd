@@ -14,7 +14,6 @@ permissions:
 
 jobs:
   plan-gate:
-    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@main
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v1
     with:
       working-directory: infra
-      versao: main

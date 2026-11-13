@@ -4,3 +4,6 @@ bin/
 *.tfstate.*
 .terraform/
 .env
+
+# Estado fictício usado só na demonstração do gate (testdata/tf/recria-bucket).
+!testdata/tf/recria-bucket/terraform.tfstate
