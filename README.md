@@ -62,7 +62,7 @@ O projeto consumidor escreve só uma chamada
 ```yaml
 jobs:
   plan-gate:
-    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@main
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v1
     with:
       working-directory: infra
 ```
@@ -86,6 +86,41 @@ de desenho:
 O CI deste repositório exercita as três camadas: testes unitários, a action
 usada como um consumidor a usa (cada cenário que deve reprovar é conferido
 depois) e o workflow reutilizável inteiro.
+
+### Versões
+
+Uma tag `vX.Y.Z` (semver estrito, sem pré-release) dispara o
+[`release.yml`](.github/workflows/release.yml), que:
+
+1. recusa tag fora do semver e commit que não está na `main`;
+2. roda `go vet` e `go test`, para não publicar versão quebrada;
+3. publica a release com as notas da seção correspondente do
+   [`CHANGELOG.md`](CHANGELOG.md) (sem a seção, a release falha);
+4. move o alias da major (`v1`) para a tag nova, **só se ela for a maior versão
+   daquela major**: publicar `1.0.1` depois de `1.1.0` não recua o `v1`.
+
+O consumidor escolhe: `@v1` recebe as correções compatíveis; `@v1.0.0` é
+imutável e reproduzível. Subir de major (`v2`) é decisão do consumidor.
+
+### Demonstração do label
+
+[`demo-label.yml`](.github/workflows/demo-label.yml) prova a aprovação em pull
+request de verdade, sem nuvem. A pasta
+[`testdata/tf/recria-bucket`](testdata/tf/recria-bucket) tem um estado fictício
+que diz que o bucket `demo-recriacao-a` existe, e um código que pede
+`demo-recriacao-b`. O nome do bucket não muda no lugar, então o plano o recria, e
+`aws_s3_bucket` é tipo sensível. O plano roda com `-refresh=false` e
+credenciais falsas; nenhuma chamada vai para a AWS.
+
+Em um PR com o label `demo-recriacao`:
+
+| Labels no PR | Resultado do gate |
+|---|---|
+| `demo-recriacao` | reprova (`BLOQUEADO`) |
+| `demo-recriacao` + `destruicao-aprovada` | libera (`APROVADO`) |
+
+O job só roda com `demo-recriacao`, para PRs comuns não ficarem vermelhos de
+propósito.
 
 ## Como rodar
 
@@ -144,7 +179,6 @@ scripts/             gerador do plano real
 Ainda **não implementado**; entra por etapas, cada uma com testes:
 
 - Login na nuvem (OIDC) no workflow reutilizável, para planos com backend remoto.
-- Releases com tags semver e um alias móvel `v1`, para o consumidor fixar `@v1`.
 - Gate de *apply*: aplicar o próprio arquivo do plano que foi avaliado.
 - Validação de Terraform (formato, `validate`, tags obrigatórias).
 - Auditoria de dependências com política de severidade em arquivo.
