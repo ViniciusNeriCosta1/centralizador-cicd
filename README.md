@@ -461,8 +461,12 @@ scripts/             geradores dos planos reais
 .github/workflows/   plan-gate, apply, terraform-validate, dependency-audit, release, CI e demonstração
 ```
 
-## Planejado
+## Fora de escopo
 
-Ainda **não implementado**; entra por etapas, cada uma com testes:
-
-- Ambiente de demonstração com LocalStack em Docker.
+- **Emulador de AWS (LocalStack e similares).** Não há ambiente de demonstração
+  com um emulador de terceiros: depender de conta ou de token num repositório
+  público não compensa o que se ganharia. A prova do rollout é o simulador
+  próprio (`internal/fakeecs`), com o limite descrito na seção de rollout: ele
+  prova a lógica e a integração com o SDK, não o ECS de verdade.
+- **Conta AWS real.** O OIDC e o rollout nunca rodaram contra uma. Está dito
+  nos dois lugares em que isso importa.
