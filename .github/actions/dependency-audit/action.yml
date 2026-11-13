@@ -1,0 +1,77 @@
+name: dependency-audit
+description: Audita as dependências Go com o govulncheck e aplica a política de alcançabilidade.
+
+inputs:
+  working-directory:
+    description: Diretório do módulo Go a auditar.
+    required: false
+    default: "."
+  report-json:
+    description: >-
+      Relatório de `govulncheck -format json` já pronto. Quando informado, o
+      scanner não roda (útil para auditar um relatório gerado em outro lugar).
+    required: false
+    default: ""
+  govulncheck-version:
+    description: Versão do govulncheck (fixa, para a auditoria ser reproduzível).
+    required: false
+    default: v1.9.0
+
+# Não existe input de política: todo consumidor recebe a mesma regra, a que
+# está em config/dependency-policy.json na versão da ferramenta escolhida.
+runs:
+  using: composite
+  steps:
+    # 1) A ferramenta: compila o cicd e instala o govulncheck.
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache: false
+
+    - name: Compila o cicd
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      run: go build -trimpath -o "$RUNNER_TEMP/cicd" ./cmd/cicd
+
+    - name: Instala o govulncheck
+      if: inputs.report-json == ''
+      shell: bash
+      env:
+        VERSAO: ${{ inputs.govulncheck-version }}
+        GOBIN: ${{ runner.temp }}/bin
+      run: go install "golang.org/x/vuln/cmd/govulncheck@$VERSAO"
+
+    # 2) O projeto: o scanner precisa do Go DO PROJETO. A biblioteca padrão faz
+    # parte da análise, então a versão do Go muda o resultado.
+    - uses: actions/setup-go@v5
+      if: inputs.report-json == ''
+      with:
+        go-version-file: ${{ inputs.working-directory }}/go.mod
+        cache: false
+
+    - name: govulncheck
+      if: inputs.report-json == ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        # No modo json o govulncheck sai com 0 mesmo havendo vulnerabilidades:
+        # quem decide é a política. Falha do scanner derruba o passo (set -e).
+        "$RUNNER_TEMP/bin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck.json"
+
+    # 3) A política.
+    - name: Política de dependências
+      shell: bash
+      env:
+        REPORT: ${{ inputs.report-json != '' && inputs.report-json || format('{0}/govulncheck.json', runner.temp) }}
+        POLICY: ${{ github.action_path }}/../../../config/dependency-policy.json
+      run: |
+        set -o pipefail
+        "$RUNNER_TEMP/cicd" dep-audit -report "$REPORT" -policy "$POLICY" | tee "$RUNNER_TEMP/relatorio-deps.txt"
+        status=$?
+        {
+          echo '### dependency-audit'
+          echo '```'
+          cat "$RUNNER_TEMP/relatorio-deps.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$status"

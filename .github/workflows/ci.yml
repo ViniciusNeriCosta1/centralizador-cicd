@@ -252,6 +252,50 @@ jobs:
       plan-args: -refresh=false
       versao: ${{ github.sha }}
 
+  # Auditoria de dependências, do jeito que um consumidor a usa. Os relatórios
+  # são REAIS (govulncheck contra uma versão antiga e vulnerável de x/text).
+  dogfood-deps:
+    name: Dogfood (dependency-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Só importa o pacote vulnerável, sem chamar (deve liberar, com aviso)
+        uses: ./.github/actions/dependency-audit
+        with:
+          report-json: testdata/real/vuln-pacote.json
+
+      - name: Chama a função vulnerável (deve reprovar)
+        id: chamada
+        continue-on-error: true
+        uses: ./.github/actions/dependency-audit
+        with:
+          report-json: testdata/real/vuln-chamada.json
+
+      - name: Entrada que não é relatório (deve reprovar, nunca liberar)
+        id: nao-e-relatorio
+        continue-on-error: true
+        uses: ./.github/actions/dependency-audit
+        with:
+          report-json: testdata/plans/clean.json
+
+      - name: Confirma que os dois cenários reprovaram de verdade
+        env:
+          CHAMADA: ${{ steps.chamada.outcome }}
+          NAO_E_RELATORIO: ${{ steps.nao-e-relatorio.outcome }}
+        run: |
+          [ "$CHAMADA" = "failure" ] || { echo "chamada: esperava failure, veio $CHAMADA"; exit 1; }
+          [ "$NAO_E_RELATORIO" = "failure" ] || { echo "não é relatório: esperava failure, veio $NAO_E_RELATORIO"; exit 1; }
+
+  # O scanner de verdade, no próprio código deste repositório.
+  contrato-deps:
+    name: Contrato do workflow de auditoria (este repositório)
+    uses: ./.github/workflows/dependency-audit.yml
+    permissions:
+      contents: read
+    with:
+      versao: ${{ github.sha }}
+
   # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
   # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
   # reprova passaria no CI. Os comentários são fixtures no formato da API.

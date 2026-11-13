@@ -266,6 +266,52 @@ No CI, dois módulos inválidos garantem que o gate reprova de verdade: um está
 mal formatado e é válido, o outro está bem formatado e é inválido. Assim cada
 reprovação aponta para a checagem certa.
 
+### Auditoria de dependências
+
+`cicd dep-audit` aplica uma política ao relatório do `govulncheck -format json`.
+A ideia central: **nem toda vulnerabilidade merece reprovar o pipeline**. O
+`govulncheck` diz até onde o código alcança cada uma, e a política usa isso:
+
+| Nível | Significa | Padrão |
+|---|---|---|
+| `chamada` | uma função vulnerável é chamada pelo código | **reprova** |
+| `pacote` | o pacote afetado é importado, mas a função não é chamada | aviso |
+| `modulo` | o módulo está no build, nenhum pacote afetado é importado | aviso |
+
+O scanner emite **vários findings por vulnerabilidade**, um por nível. O nível
+que vale é o mais profundo: o finding de módulo não pode rebaixar uma
+vulnerabilidade cuja função é chamada (há teste para isso).
+
+A política é [`config/dependency-policy.json`](config/dependency-policy.json).
+Exceções precisam de **motivo e prazo**:
+
+```json
+{
+  "severity": "obrigatoria",
+  "block_on": ["chamada"],
+  "ignore": [
+    { "id": "GO-2021-0113", "reason": "só usada em teste", "expires": "2026-12-31" }
+  ]
+}
+```
+
+- O `id` pode ser o do banco do Go, um CVE ou um GHSA.
+- Exceção **vencida** não vale: a vulnerabilidade volta a reprovar e o relatório
+  avisa que a exceção precisa de revisão. O prazo vale até o fim do dia.
+- Exceção que não casa com nada no relatório aparece como "sem uso".
+- Exceção sem motivo ou sem prazo é **erro de política** (código 2).
+- Relatório vazio ou que não é do govulncheck é **erro (código 2)**: se o scanner
+  falhou, isso nunca vira "nenhuma vulnerabilidade".
+
+No GitHub Actions, o workflow reutilizável
+[`dependency-audit.yml`](.github/workflows/dependency-audit.yml) roda o scanner
+(versão fixa do `govulncheck`, com o Go do próprio projeto, porque a biblioteca
+padrão entra na análise) e aplica a política. Não precisa de credenciais.
+
+Limites: só Go (é o que o `govulncheck` cobre), e o banco de vulnerabilidades
+muda com o tempo, então um pipeline pode ficar vermelho sem nenhum commit novo.
+É o comportamento desejado, mas surpreende quem não espera.
+
 ## Como rodar
 
 Com Go instalado:
@@ -306,6 +352,11 @@ cicd plan-gate -plan plano.json -policy config/plan-policy.json
 - **Tags**: valor vazio, `tags_all` que vale mais que `tags`, tag desconhecida
   mas com chave presente, `tags_all` inteiro desconhecido, atualização e
   recriação, tipo ignorado, severidade `aviso`, política vazia.
+- **Dependências**: relatórios **reais** do `govulncheck`
+  ([`scripts/gerar-relatorios-vuln.sh`](scripts/gerar-relatorios-vuln.sh)), um
+  com função chamada e outro só com pacote importado; o nível mais profundo
+  vence, exceção vencida e exceção com alias, prazo até o fim do dia, relatório
+  vazio ou de outro scanner.
 - Regra de recriação coberta: só destruir não conta, `create_before_destroy`
   conta, *data sources* não contam.
 - **Apply gateado**: comentário forjado por quem não é o bot, marcador ilegível,
@@ -321,20 +372,20 @@ internal/plan/       leitura do plano em JSON
 internal/policy/     carga e validação da política
 internal/gate/       regras e relatório do gate de recriação
 internal/tags/       política e gate de tags obrigatórias
+internal/vuln/       relatório do govulncheck e política de dependências
 internal/delta/      destruição do apply x plano revisado; comentário do PR
-config/              políticas distribuídas (recriação e tags)
+config/              políticas distribuídas (recriação, tags e dependências)
 testdata/            planos, comentários de PR e módulos de exemplo
 examples/            como um projeto consumidor chama os workflows
 scripts/             geradores dos planos reais
-.github/actions/     plan-gate, apply-gate, tag-check e terraform-validate
-.github/workflows/   plan-gate, apply, terraform-validate, release, CI e demonstração
+.github/actions/     plan-gate, apply-gate, tag-check, terraform-validate e dependency-audit
+.github/workflows/   plan-gate, apply, terraform-validate, dependency-audit, release, CI e demonstração
 ```
 
 ## Planejado
 
 Ainda **não implementado**; entra por etapas, cada uma com testes:
 
-- Auditoria de dependências com política de severidade em arquivo.
 - Espera de *rollout* por estado, não por tempo fixo, testada contra uma AWS
   simulada.
 - Ambiente de demonstração com LocalStack em Docker.

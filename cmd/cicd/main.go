@@ -6,6 +6,7 @@
 //	cicd review-comment -plan plano.json [-dir .]
 //	cicd reviewed-id   -comments comentarios.json [-dir .]
 //	cicd tag-check     -plan plano.json -policy politica-de-tags.json
+//	cicd dep-audit     -report govulncheck.json -policy politica-de-dependencias.json
 //	cicd apply-gate    -plan plano.json -policy politica.json [-comments comentarios.json] [-dir .] [-approved]
 //
 // Códigos de saída: 0 liberado, 1 reprovado pelo gate, 2 erro de uso ou de leitura.
@@ -18,12 +19,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"centralizador-cicd/internal/delta"
 	"centralizador-cicd/internal/gate"
 	"centralizador-cicd/internal/plan"
 	"centralizador-cicd/internal/policy"
 	"centralizador-cicd/internal/tags"
+	"centralizador-cicd/internal/vuln"
 )
 
 func main() {
@@ -35,6 +38,7 @@ const uso = `uso:
   cicd review-comment -plan <plano.json> [-dir .]
   cicd reviewed-id    -comments <comentarios.json> [-dir .]
   cicd tag-check      -plan <plano.json> -policy <politica-de-tags.json>
+  cicd dep-audit      -report <govulncheck.json> -policy <politica-de-dependencias.json> [-today AAAA-MM-DD]
   cicd apply-gate     -plan <plano.json> -policy <politica.json> [-comments <comentarios.json>] [-dir .] [-approved]`
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -53,6 +57,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return applyGate(args[1:], stdout, stderr)
 	case "tag-check":
 		return tagCheck(args[1:], stdout, stderr)
+	case "dep-audit":
+		return depAudit(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "subcomando desconhecido: %q\n", args[0])
 		return 2
@@ -245,6 +251,50 @@ func tagCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	res := tags.Evaluate(p, pol)
+	res.Render(stdout)
+	return res.ExitCode()
+}
+
+// dep-audit aplica a política de dependências ao relatório do govulncheck.
+func depAudit(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("dep-audit", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	reportPath := fs.String("report", "", "relatório de `govulncheck -format json`")
+	policyPath := fs.String("policy", "", "política de dependências")
+	today := fs.String("today", "", "data de hoje (AAAA-MM-DD), para as exceções com prazo; vazio = hoje (UTC)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *reportPath == "" || *policyPath == "" {
+		fmt.Fprintln(stderr, "erro: -report e -policy são obrigatórios")
+		return 2
+	}
+	now := time.Now().UTC()
+	if *today != "" {
+		t, err := time.Parse("2006-01-02", *today)
+		if err != nil {
+			fmt.Fprintf(stderr, "erro: -today %q precisa ser AAAA-MM-DD\n", *today)
+			return 2
+		}
+		now = t
+	}
+	pol, err := vuln.Load(*policyPath)
+	if err != nil {
+		fmt.Fprintln(stderr, "erro:", err)
+		return 2
+	}
+	f, err := os.Open(*reportPath)
+	if err != nil {
+		fmt.Fprintln(stderr, "erro:", err)
+		return 2
+	}
+	defer f.Close()
+	rep, err := vuln.Parse(f)
+	if err != nil {
+		fmt.Fprintln(stderr, "erro:", err)
+		return 2
+	}
+	res := vuln.Evaluate(rep, pol, now)
 	res.Render(stdout)
 	return res.ExitCode()
 }

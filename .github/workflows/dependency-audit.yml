@@ -1,0 +1,38 @@
+# Workflow reutilizável: auditoria das dependências Go.
+#
+# Roda o govulncheck no módulo e aplica a política em arquivo: reprova só o que
+# o código de fato alcança (função vulnerável chamada), avisa o resto, e aceita
+# exceções com motivo e prazo. Não precisa de credenciais.
+name: dependency-audit (reutilizável)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Diretório do módulo Go.
+        type: string
+        default: "."
+      versao:
+        description: Ref (tag, branch ou sha) desta ferramenta a usar.
+        type: string
+        default: v2
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixa a ferramenta na versão pedida
+        uses: actions/checkout@v4
+        with:
+          repository: ViniciusNeriCosta1/centralizador-cicd
+          ref: ${{ inputs.versao }}
+          path: .cicd-ferramenta
+
+      - uses: ./.cicd-ferramenta/.github/actions/dependency-audit
+        with:
+          working-directory: ${{ inputs.working-directory }}

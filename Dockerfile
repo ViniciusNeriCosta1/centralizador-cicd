@@ -1,7 +1,7 @@
 # Duas etapas com propósitos diferentes:
 #   test    : roda a suíte (docker build --target test .)
 #   runtime : imagem mínima só com o binário, para usar o gate em qualquer CI
-FROM golang:1.22-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod ./
 RUN go mod download

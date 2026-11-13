@@ -5,6 +5,17 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+- `cicd dep-audit`, a action `dependency-audit` e o workflow reutilizável
+  `dependency-audit.yml`: política de dependências sobre o `govulncheck`, por
+  nível de alcançabilidade (`chamada` reprova; `pacote` e `modulo` avisam), com
+  exceções que têm motivo e prazo. `config/dependency-policy.json`.
+
+### Alterado
+- Go mínimo sobe de 1.22 para 1.26 (`go.mod` e `Dockerfile`). A própria auditoria
+  apontou, no primeiro uso real, uma vulnerabilidade chamada pelo código na
+  biblioteca padrão do 1.22 (GO-2025-3750, `os.ReadFile`), já fora de suporte.
+
 ## [2.0.0] - 2026-11-13
 
 Major por duas quebras de contrato (veja "Alterado"). Para migrar do `v1`: troque

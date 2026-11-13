@@ -121,6 +121,46 @@ func TestTagCheck(t *testing.T) {
 	}
 }
 
+func TestDepAudit(t *testing.T) {
+	pol := caminho("config", "dependency-policy.json")
+	real := func(nome string) string { return caminho("testdata", "real", nome) }
+	casos := []struct {
+		nome   string
+		args   []string
+		codigo int
+		trecho string
+	}{
+		{"função vulnerável chamada reprova",
+			[]string{"dep-audit", "-report", real("vuln-chamada.json"), "-policy", pol}, 1, "BLOQUEADO"},
+		{"só importar o pacote libera, com aviso",
+			[]string{"dep-audit", "-report", real("vuln-pacote.json"), "-policy", pol}, 0, "AVISO"},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			codigo, out, errOut := exec(t, c.args...)
+			if codigo != c.codigo {
+				t.Fatalf("código = %d, quer %d\nstdout: %s\nstderr: %s", codigo, c.codigo, out, errOut)
+			}
+			if !strings.Contains(out, c.trecho) {
+				t.Errorf("stdout deveria conter %q:\n%s", c.trecho, out)
+			}
+		})
+	}
+
+	// Exceção com prazo: em vigor libera; vencida volta a reprovar.
+	excecao := filepath.Join(t.TempDir(), "dep.json")
+	conteudo := `{"severity":"obrigatoria","block_on":["chamada"],"ignore":[{"id":"GO-2021-0113","reason":"só em teste","expires":"2026-12-31"},{"id":"GO-2022-1059","reason":"só em teste","expires":"2026-12-31"}]}`
+	if err := os.WriteFile(excecao, []byte(conteudo), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if codigo, out, _ := exec(t, "dep-audit", "-report", real("vuln-chamada.json"), "-policy", excecao, "-today", "2026-11-13"); codigo != 0 || !strings.Contains(out, "IGNORADO") {
+		t.Errorf("exceção em vigor: código %d\n%s", codigo, out)
+	}
+	if codigo, out, _ := exec(t, "dep-audit", "-report", real("vuln-chamada.json"), "-policy", excecao, "-today", "2027-01-01"); codigo != 1 || !strings.Contains(out, "EXCEÇÃO VENCIDA") {
+		t.Errorf("exceção vencida: código %d\n%s", codigo, out)
+	}
+}
+
 func TestReviewCommentEReviewedIDFazemIdaEVolta(t *testing.T) {
 	codigo, corpo, errOut := exec(t, "review-comment", "-plan", caminho("testdata", "plans", "replace-common.json"), "-dir", "infra")
 	if codigo != 0 {
@@ -175,6 +215,11 @@ func TestErrosSaemComCodigo2(t *testing.T) {
 		"tag-check sem política":              {"tag-check", "-plan", caminho("testdata", "real", "tags-ok.json")},
 		"tag-check sem plano":                 {"tag-check", "-policy", caminho("config", "tag-policy.json")},
 		"tag-check com política de plan-gate": {"tag-check", "-plan", caminho("testdata", "real", "tags-ok.json"), "-policy", caminho("config", "plan-policy.json")},
+		"dep-audit sem política":              {"dep-audit", "-report", caminho("testdata", "real", "vuln-chamada.json")},
+		"dep-audit sem relatório":             {"dep-audit", "-policy", caminho("config", "dependency-policy.json")},
+		"dep-audit com plano do Terraform":    {"dep-audit", "-report", caminho("testdata", "plans", "clean.json"), "-policy", caminho("config", "dependency-policy.json")},
+		"dep-audit com data inválida":         {"dep-audit", "-report", caminho("testdata", "real", "vuln-chamada.json"), "-policy", caminho("config", "dependency-policy.json"), "-today", "ontem"},
+		"dep-audit com relatório inexistente": {"dep-audit", "-report", "nao-existe.json", "-policy", caminho("config", "dependency-policy.json")},
 		"tag-check com state":                 {"tag-check", "-plan", caminho("testdata", "plans", "not-a-plan.json"), "-policy", caminho("config", "tag-policy.json")},
 	}
 	for nome, args := range casos {
