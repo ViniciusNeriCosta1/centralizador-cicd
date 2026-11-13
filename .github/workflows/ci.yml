@@ -91,9 +91,48 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     with:
       working-directory: testdata/tf/limpo
       versao: ${{ github.sha }}
+
+  # Prova (sem nuvem) o que o OIDC entrega: a plataforma emite um token com o
+  # `sub` do repositório e do evento. É esse `sub` que a trust policy da role
+  # confere (examples/aws-oidc-trust.tf). O token só vai ao endpoint do GitHub.
+  oidc-claims:
+    name: Claims do token OIDC
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Pede o token e confere audience e subject
+        env:
+          REPO: ${{ github.repository }}
+          EVENTO: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          resp="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")"
+          token="$(printf '%s' "$resp" | jq -r .value)"
+          echo "::add-mask::$token"
+          claims="$(printf '%s' "$token" | python3 -I -c '
+          import sys, base64, json
+          p = sys.stdin.read().split(".")[1]
+          print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))))')"
+          echo "$claims" | jq '{iss, aud, sub, repository, ref, event_name, job_workflow_ref}'
+
+          if [ "$EVENTO" = "pull_request" ]; then
+            esperado="repo:$REPO:pull_request"
+          else
+            esperado="repo:$REPO:ref:$REF"
+          fi
+          aud="$(echo "$claims" | jq -r .aud)"
+          sub="$(echo "$claims" | jq -r .sub)"
+          [ "$aud" = "sts.amazonaws.com" ] || { echo "aud inesperado: $aud"; exit 1; }
+          [ "$sub" = "$esperado" ] || { echo "sub inesperado: $sub (esperado $esperado)"; exit 1; }
+          echo "sub e aud conferem: $sub"
 
   # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
   # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
@@ -164,6 +203,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write
     with:
       working-directory: testdata/tf/limpo
       versao: ${{ github.sha }}
@@ -180,6 +220,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     with:
       working-directory: testdata/tf/recria-estado
       versao: ${{ github.sha }}
@@ -191,6 +232,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write
     with:
       working-directory: testdata/tf/recria-estado
       versao: ${{ github.sha }}

@@ -5,6 +5,18 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+- OIDC nos workflows `plan-gate.yml` e `apply.yml`: inputs `aws-role-arn` e
+  `aws-region` assumem a role da AWS com token de curta duração, sem chave
+  guardada. Sem `aws-role-arn`, nada muda.
+- `examples/aws-oidc-trust.tf`: as duas roles (plan e apply) com trust policy
+  presa ao `sub` do token.
+- Job `oidc-claims` no CI: pede o token OIDC e confere `aud` e `sub`.
+
+### Alterado
+- **Quebra de contrato:** os dois workflows reutilizáveis passam a pedir
+  `id-token: write`. O chamador precisa concedê-la.
+
 ## [1.1.0] - 2026-11-13
 
 ### Adicionado

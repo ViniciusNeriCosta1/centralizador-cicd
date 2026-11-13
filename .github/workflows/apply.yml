@@ -28,6 +28,16 @@ on:
         description: "Argumentos extras do `terraform plan`, como -var-file=..."
         type: string
         default: ""
+      aws-role-arn:
+        description: >-
+          ARN da role da AWS a assumir por OIDC (sem chave de longa duração).
+          Vazio = não assume role (módulos sem AWS, ou credenciais de outro jeito).
+        type: string
+        default: ""
+      aws-region:
+        description: Região da AWS (obrigatória quando aws-role-arn é informado).
+        type: string
+        default: ""
       versao:
         description: Ref (tag, branch ou sha) desta ferramenta a usar.
         type: string
@@ -36,12 +46,42 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # Necessário para pedir o token OIDC. Um workflow reutilizável não consegue
+  # pedir esta permissão só quando o chamador usa OIDC: o chamador precisa
+  # concedê-la sempre (por isso esta mudança é de major).
+  id-token: write
 
 jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Credenciais de curta duração, emitidas pelo OIDC do GitHub: não existe
+      # chave de acesso guardada no repositório. Quem limita o que o workflow
+      # pode fazer é a trust policy da role (veja examples/aws-oidc-trust.tf).
+      - name: Confere os inputs de OIDC
+        if: inputs.aws-role-arn != ''
+        env:
+          ROLE: ${{ inputs.aws-role-arn }}
+          REGION: ${{ inputs.aws-region }}
+        run: |
+          if ! [[ "$ROLE" =~ ^arn:aws(-[a-z]+)*:iam::[0-9]{12}:role/.+$ ]]; then
+            echo "aws-role-arn não parece o ARN de uma role: $ROLE"
+            exit 1
+          fi
+          if [ -z "$REGION" ]; then
+            echo "aws-region é obrigatório quando aws-role-arn é informado"
+            exit 1
+          fi
+
+      - name: Credenciais da AWS por OIDC
+        if: inputs.aws-role-arn != ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+          role-session-name: cicd-${{ github.run_id }}
 
       - uses: hashicorp/setup-terraform@v3
         with:

@@ -79,13 +79,49 @@ de desenho:
   `versao`.
 - **O plano não vira artifact.** Ele fica em `RUNNER_TEMP` e é apagado no fim,
   porque carrega o state em texto puro.
-- **Sem credenciais de nuvem ainda.** O `terraform init` aceita argumentos
-  extras (`init-args`), mas não há passo de login na nuvem. Hoje serve para
-  módulos sem backend remoto.
+- **Credenciais por OIDC, sem chave guardada.** Com `aws-role-arn` e
+  `aws-region`, o workflow assume a role da AWS com um token de curta duração
+  (veja [OIDC](#oidc-sem-chave-de-longa-duração)). Sem `aws-role-arn`, nenhum
+  passo de login roda: serve para módulos sem nuvem.
 
 O CI deste repositório exercita as três camadas: testes unitários, a action
 usada como um consumidor a usa (cada cenário que deve reprovar é conferido
 depois) e o workflow reutilizável inteiro.
+
+### OIDC: sem chave de longa duração
+
+Os dois workflows reutilizáveis aceitam `aws-role-arn` e `aws-region`. Quando a
+role é informada, o workflow pede um token OIDC ao GitHub e troca por
+credenciais temporárias da AWS (`aws-actions/configure-aws-credentials`). Não
+existe `AWS_ACCESS_KEY_ID` guardado no repositório para vazar.
+
+O que importa não está no workflow, e sim na **trust policy da role**
+([`examples/aws-oidc-trust.tf`](examples/aws-oidc-trust.tf)):
+
+| Role | Quem pode assumir (`sub` do token) | Permissão |
+|---|---|---|
+| plan | `repo:dono/repo:pull_request` | só leitura |
+| apply | `repo:dono/repo:ref:refs/heads/main` | o que o módulo precisa criar |
+
+Por isso são duas roles: um pull request nunca assume a role do apply, mesmo que
+alguém altere o workflow. A condição é `StringEquals` no `sub` inteiro; com
+`repo:dono/*` qualquer repositório do dono assumiria a role.
+
+O job `oidc-claims` do CI pede o token de verdade e confere `aud` e `sub` (sem
+nuvem: o token só vai ao endpoint do GitHub). O exemplo de trust policy passa
+por `terraform fmt` e `validate`.
+
+Limites:
+
+- **Não foi provado contra uma conta AWS real.** O passo de credenciais só roda
+  com `aws-role-arn`, e este repositório não tem conta. O que está provado: o
+  token tem o `sub` esperado, o exemplo é um Terraform válido, e sem role o
+  workflow segue como antes.
+- **O chamador precisa conceder `id-token: write` sempre.** Um workflow
+  reutilizável não consegue pedir essa permissão só quando há OIDC. Por isso a
+  mudança é de major (`v2`): chamadores do `v1` falhariam ao iniciar.
+- Pull request de fork não recebe token OIDC, então o plan na AWS não roda ali.
+  É o comportamento desejado.
 
 ### Versões
 
