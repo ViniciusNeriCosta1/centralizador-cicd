@@ -19,9 +19,13 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Alterado
 - A imagem Docker passa de menos de 10 MB para cerca de 20 MB (SDK da AWS).
-- Go mínimo sobe de 1.22 para 1.26 (`go.mod` e `Dockerfile`). A própria auditoria
+- Go mínimo sobe de 1.22 para 1.26.11 (`go.mod` e `Dockerfile`). A própria auditoria
   apontou, no primeiro uso real, uma vulnerabilidade chamada pelo código na
-  biblioteca padrão do 1.22 (GO-2025-3750, `os.ReadFile`), já fora de suporte.
+  biblioteca padrão do 1.22 (GO-2025-3750, `os.ReadFile`), já fora de suporte. O
+  piso é o patch 1.26.11, que corrige GO-2026-6859 (`net/http`), alcançada pelo
+  SDK da AWS.
+- A action `dependency-audit` usa `check-latest` no Go do projeto: o resultado
+  não depende mais do patch que estiver em cache no runner.
 
 ## [2.0.0] - 2026-11-13
 

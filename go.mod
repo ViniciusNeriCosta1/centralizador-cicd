@@ -1,6 +1,6 @@
 module centralizador-cicd
 
-go 1.26
+go 1.26.11
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.48.0

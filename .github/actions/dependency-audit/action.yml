@@ -43,10 +43,14 @@ runs:
 
     # 2) O projeto: o scanner precisa do Go DO PROJETO. A biblioteca padrão faz
     # parte da análise, então a versão do Go muda o resultado.
+    # check-latest: sem ele, "1.26" vira o patch que estiver em cache no runner,
+    # que muda de um runner para outro (um run pegou 1.26.11, o seguinte 1.26.10,
+    # e o resultado da auditoria mudou). A auditoria usa o patch mais novo.
     - uses: actions/setup-go@v5
       if: inputs.report-json == ''
       with:
         go-version-file: ${{ inputs.working-directory }}/go.mod
+        check-latest: true
         cache: false
 
     - name: govulncheck

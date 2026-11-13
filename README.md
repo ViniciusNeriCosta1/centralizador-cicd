@@ -312,6 +312,13 @@ Limites: só Go (é o que o `govulncheck` cobre), e o banco de vulnerabilidades
 muda com o tempo, então um pipeline pode ficar vermelho sem nenhum commit novo.
 É o comportamento desejado, mas surpreende quem não espera.
 
+O **patch do Go entra na análise**. Numa execução real, o mesmo código passou com
+o Go 1.26.11 e reprovou com o 1.26.10: o SDK da AWS usa o cliente HTTP, e uma
+falha em `net/http` corrigida no 1.26.11 passou a ser *chamada*. O runner tinha
+o 1.26.10 em cache, e `go 1.26` no `go.mod` aceita qualquer patch. Duas
+correções: a action usa `check-latest` (o patch mais novo, e não o do cache), e
+o `go.mod` deste repositório fixa o piso em `go 1.26.11`.
+
 ### Espera de rollout por estado
 
 Depois de um deploy no ECS, a pergunta é "terminou?". Esperar um tempo fixo erra
