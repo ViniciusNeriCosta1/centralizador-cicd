@@ -5,6 +5,8 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.1.0] - 2026-11-13
+
 ### Adicionado
 - Apply gateado: `cicd apply-gate`, a action `apply-gate` e o workflow
   reutilizável `apply.yml`. O apply compara a destruição do seu plano com o plano
