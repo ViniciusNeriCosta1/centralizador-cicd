@@ -312,6 +312,68 @@ Limites: só Go (é o que o `govulncheck` cobre), e o banco de vulnerabilidades
 muda com o tempo, então um pipeline pode ficar vermelho sem nenhum commit novo.
 É o comportamento desejado, mas surpreende quem não espera.
 
+### Espera de rollout por estado
+
+Depois de um deploy no ECS, a pergunta é "terminou?". Esperar um tempo fixo erra
+nos dois sentidos: fica vermelho quando o deploy deu certo e demorou mais que o
+limite, e gasta o limite inteiro quando o deploy falhou logo no começo.
+
+`cicd rollout-wait` consulta o serviço (`DescribeServices`) e decide pelo
+**estado**. O tempo é só o teto:
+
+| Estado do serviço | Resultado |
+|---|---|
+| deployment PRIMARY `COMPLETED`, único, tasks rodando = desejadas, nenhuma pendente | **estável**, termina na hora |
+| PRIMARY `FAILED` (circuit breaker) | **falhou**, termina na hora, com o motivo do ECS |
+| serviço `DRAINING` ou `INACTIVE` | falhou |
+| `IN_PROGRESS`, deployment antigo ainda drenando, tasks faltando | segue esperando |
+| teto de tempo estourou | **reprova** (código 1), com o último estado |
+| serviço inexistente, credenciais, rede | **erro (código 2)** |
+
+Dois cuidados que fazem diferença:
+
+- **Confere a task definition.** Logo depois do `update-service`, o serviço ainda
+  pode mostrar a versão ANTIGA como estável. Com `-task-definition <arn>`, só
+  vale se o PRIMARY for essa versão; sem isso a espera acabaria na hora,
+  declarando pronta a versão velha. Há um cenário dedicado para isso.
+- **Erro de consulta não vira resultado.** Limite de taxa e falha de rede são
+  repetidos até 3 vezes seguidas; passado disso, é erro (código 2), nunca
+  "estável" nem "falhou".
+
+#### Provado contra uma AWS simulada
+
+Não há conta AWS neste repositório, então a prova roda contra um ECS simulado
+([`internal/fakeecs`](internal/fakeecs), servido pelo comando
+[`cmd/fake-ecs`](cmd/fake-ecs)). Ele implementa só o `DescribeServices`, com
+cenários por **número de consulta**, sem relógio: a N-ésima consulta recebe o
+N-ésimo estado. Por isso os testes são determinísticos.
+
+| Cenário | O que prova |
+|---|---|
+| `sucesso` | converge em 4 consultas, sem usar o teto |
+| `falha` | o circuit breaker encerra na 2ª consulta, não no teto |
+| `versao-antiga` | a versão antiga estável não encerra a espera |
+| `travado` | só o teto encerra |
+| `inexistente` | serviço que não existe é erro, não repetição |
+
+O **SDK da AWS real** faz a chamada e interpreta a resposta; o simulador só
+responde. Se os nomes de campo dele não batessem com o modelo da API, os valores
+não chegariam ao teste. O CI roda a action contra o simulador, e os cenários que
+devem reprovar são conferidos depois.
+
+Limite, dito com todas as letras: o simulador foi escrito a partir da
+documentação da API. Ele prova a lógica de decisão e a integração com o SDK, e
+**não prova que o ECS de verdade se comporta assim**. Sem circuit breaker, um
+deploy que nunca converge só é encerrado pelo teto.
+
+```bash
+go run ./cmd/fake-ecs -scenario sucesso &        # escuta em 127.0.0.1:8765
+AWS_ACCESS_KEY_ID=falso AWS_SECRET_ACCESS_KEY=falso AWS_REGION=us-east-1 \
+  go run ./cmd/cicd rollout-wait -cluster demo -service web \
+  -endpoint http://127.0.0.1:8765 -interval 200ms \
+  -task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/web:2
+```
+
 ## Como rodar
 
 Com Go instalado:
@@ -330,7 +392,8 @@ docker compose --profile demo run --rm gate plan-gate \
   -policy /etc/cicd/plan-policy.json
 ```
 
-A imagem final usa `distroless` e tem menos de 10 MB.
+A imagem final usa `distroless` e tem cerca de 20 MB (o SDK da AWS, usado pela
+espera de rollout, é a maior parte).
 
 Usar com um plano seu:
 
@@ -357,6 +420,11 @@ cicd plan-gate -plan plano.json -policy config/plan-policy.json
   com função chamada e outro só com pacote importado; o nível mais profundo
   vence, exceção vencida e exceção com alias, prazo até o fim do dia, relatório
   vazio ou de outro scanner.
+- **Rollout**: o estado decide (estável, falho, em andamento) em tabela de
+  casos; o laço de espera com relógio e pausa falsos (termina assim que o estado
+  decide, falha na hora, estoura o teto, tolera erro transitório mas não para
+  sempre); o cliente do SDK real contra o simulador; e o comando inteiro. Uma
+  mutação rápida (remover a conferência da task definition) faz testes falharem.
 - Regra de recriação coberta: só destruir não conta, `create_before_destroy`
   conta, *data sources* não contam.
 - **Apply gateado**: comentário forjado por quem não é o bot, marcador ilegível,
@@ -368,17 +436,21 @@ cicd plan-gate -plan plano.json -policy config/plan-policy.json
 
 ```
 cmd/cicd/            ponto de entrada e códigos de saída
+cmd/fake-ecs/        servidor do ECS simulado
 internal/plan/       leitura do plano em JSON
 internal/policy/     carga e validação da política
 internal/gate/       regras e relatório do gate de recriação
 internal/tags/       política e gate de tags obrigatórias
 internal/vuln/       relatório do govulncheck e política de dependências
+internal/rollout/    decisão e espera de rollout do ECS, por estado
+internal/ecs/        cliente do ECS (SDK da AWS) para o rollout
+internal/fakeecs/    ECS simulado, com cenários
 internal/delta/      destruição do apply x plano revisado; comentário do PR
 config/              políticas distribuídas (recriação, tags e dependências)
 testdata/            planos, comentários de PR e módulos de exemplo
 examples/            como um projeto consumidor chama os workflows
 scripts/             geradores dos planos reais
-.github/actions/     plan-gate, apply-gate, tag-check, terraform-validate e dependency-audit
+.github/actions/     plan-gate, apply-gate, tag-check, terraform-validate, dependency-audit e rollout-wait
 .github/workflows/   plan-gate, apply, terraform-validate, dependency-audit, release, CI e demonstração
 ```
 
@@ -386,6 +458,4 @@ scripts/             geradores dos planos reais
 
 Ainda **não implementado**; entra por etapas, cada uma com testes:
 
-- Espera de *rollout* por estado, não por tempo fixo, testada contra uma AWS
-  simulada.
 - Ambiente de demonstração com LocalStack em Docker.

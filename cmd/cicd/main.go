@@ -7,6 +7,7 @@
 //	cicd reviewed-id   -comments comentarios.json [-dir .]
 //	cicd tag-check     -plan plano.json -policy politica-de-tags.json
 //	cicd dep-audit     -report govulncheck.json -policy politica-de-dependencias.json
+//	cicd rollout-wait  -cluster c -service s [-task-definition arn] [-region r] [-timeout 15m] [-interval 10s]
 //	cicd apply-gate    -plan plano.json -policy politica.json [-comments comentarios.json] [-dir .] [-approved]
 //
 // Códigos de saída: 0 liberado, 1 reprovado pelo gate, 2 erro de uso ou de leitura.
@@ -15,6 +16,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,9 +25,11 @@ import (
 	"time"
 
 	"centralizador-cicd/internal/delta"
+	"centralizador-cicd/internal/ecs"
 	"centralizador-cicd/internal/gate"
 	"centralizador-cicd/internal/plan"
 	"centralizador-cicd/internal/policy"
+	"centralizador-cicd/internal/rollout"
 	"centralizador-cicd/internal/tags"
 	"centralizador-cicd/internal/vuln"
 )
@@ -39,6 +44,7 @@ const uso = `uso:
   cicd reviewed-id    -comments <comentarios.json> [-dir .]
   cicd tag-check      -plan <plano.json> -policy <politica-de-tags.json>
   cicd dep-audit      -report <govulncheck.json> -policy <politica-de-dependencias.json> [-today AAAA-MM-DD]
+  cicd rollout-wait   -cluster <cluster> -service <serviço> [-task-definition <arn>] [-region <r>] [-endpoint <url>] [-timeout 15m] [-interval 10s]
   cicd apply-gate     -plan <plano.json> -policy <politica.json> [-comments <comentarios.json>] [-dir .] [-approved]`
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -59,6 +65,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return tagCheck(args[1:], stdout, stderr)
 	case "dep-audit":
 		return depAudit(args[1:], stdout, stderr)
+	case "rollout-wait":
+		return rolloutWait(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "subcomando desconhecido: %q\n", args[0])
 		return 2
@@ -297,4 +305,60 @@ func depAudit(args []string, stdout, stderr io.Writer) int {
 	res := vuln.Evaluate(rep, pol, now)
 	res.Render(stdout)
 	return res.ExitCode()
+}
+
+// rollout-wait espera o deploy de um serviço ECS terminar, pelo estado do
+// serviço. Códigos: 0 estável, 1 deploy falhou ou o teto de tempo estourou,
+// 2 erro de uso ou de consulta (serviço inexistente, credenciais, rede).
+func rolloutWait(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("rollout-wait", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	cluster := fs.String("cluster", "", "nome do cluster ECS")
+	service := fs.String("service", "", "nome do serviço ECS")
+	want := fs.String("task-definition", "", "ARN da task definition que o deploy deve colocar no ar (recomendado)")
+	region := fs.String("region", "", "região da AWS (padrão: AWS_REGION)")
+	endpoint := fs.String("endpoint", "", "endpoint alternativo, para um simulador (vazio = o ECS de verdade)")
+	timeout := fs.Duration("timeout", 15*time.Minute, "teto da espera: não é a duração normal, a espera termina quando o estado decide")
+	interval := fs.Duration("interval", 10*time.Second, "pausa entre as consultas")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *cluster == "" || *service == "" {
+		fmt.Fprintln(stderr, "erro: -cluster e -service são obrigatórios")
+		return 2
+	}
+	if *timeout <= 0 || *interval <= 0 {
+		fmt.Fprintln(stderr, "erro: -timeout e -interval precisam ser positivos")
+		return 2
+	}
+
+	ctx := context.Background()
+	cli, err := ecs.New(ctx, *region, *endpoint, *cluster, *service)
+	if err != nil {
+		fmt.Fprintln(stderr, "erro:", err)
+		return 2
+	}
+	res, err := rollout.Wait(ctx, cli, rollout.Options{
+		Want: *want, Timeout: *timeout, Interval: *interval, Log: stdout,
+	})
+	if err != nil {
+		if errors.Is(err, rollout.ErrNotFound) {
+			fmt.Fprintln(stderr, "erro:", err)
+		} else {
+			fmt.Fprintln(stderr, "erro ao consultar o serviço:", err)
+		}
+		return 2
+	}
+	switch {
+	case res.OK():
+		fmt.Fprintf(stdout, "\nResultado do rollout: estável depois de %d consulta(s), %s.\n", res.Polls, res.Elapsed.Round(time.Millisecond))
+		return 0
+	case res.TimedOut:
+		fmt.Fprintf(stdout, "\nResultado do rollout: REPROVADO. O teto de %s estourou sem o deploy terminar (%d consultas). Último estado: %s.\n",
+			*timeout, res.Polls, res.Verdict.Reason)
+		return 1
+	default:
+		fmt.Fprintf(stdout, "\nResultado do rollout: REPROVADO. %s.\n", res.Verdict.Reason)
+		return 1
+	}
 }

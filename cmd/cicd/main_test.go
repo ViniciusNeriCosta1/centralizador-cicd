@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"centralizador-cicd/internal/fakeecs"
 )
 
 func caminho(rel ...string) string {
@@ -161,6 +164,52 @@ func TestDepAudit(t *testing.T) {
 	}
 }
 
+// rollout-wait de ponta a ponta: o comando, o SDK da AWS e o ECS simulado.
+func TestRolloutWait(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "falso")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "falso")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_CONFIG_FILE", os.DevNull)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.DevNull)
+	t.Setenv("AWS_REGION", "us-east-1")
+
+	casos := []struct {
+		nome    string
+		cenario string
+		extra   []string
+		codigo  int
+		trecho  string
+	}{
+		{"sucesso", "sucesso", []string{"-task-definition", fakeecs.TaskDefinitionNova}, 0, "estável depois de 4 consulta(s)"},
+		{"falha do circuit breaker reprova na hora", "falha", []string{"-task-definition", fakeecs.TaskDefinitionNova}, 1, "circuit breaker"},
+		{"versão antiga estável não encerra a espera", "versao-antiga", []string{"-task-definition", fakeecs.TaskDefinitionNova}, 0, "estável depois de 4 consulta(s)"},
+		{"travado estoura o teto", "travado", []string{"-task-definition", fakeecs.TaskDefinitionNova, "-timeout", "60ms"}, 1, "teto de 60ms estourou"},
+		{"serviço inexistente é erro", "inexistente", nil, 2, ""},
+		{"serviço com outro nome é erro", "sucesso", []string{"-service", "outro"}, 2, ""},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			srv, err := fakeecs.New(c.cenario)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ts := httptest.NewServer(srv.Handler())
+			defer ts.Close()
+			args := []string{"rollout-wait", "-cluster", "demo", "-service", "web", "-endpoint", ts.URL,
+				"-interval", "5ms", "-timeout", "5s"}
+			args = append(args, c.extra...) // os últimos flags valem
+			codigo, out, errOut := exec(t, args...)
+			if codigo != c.codigo {
+				t.Fatalf("código = %d, quer %d\nstdout: %s\nstderr: %s", codigo, c.codigo, out, errOut)
+			}
+			if !strings.Contains(out, c.trecho) {
+				t.Errorf("stdout deveria conter %q:\n%s", c.trecho, out)
+			}
+		})
+	}
+}
+
 func TestReviewCommentEReviewedIDFazemIdaEVolta(t *testing.T) {
 	codigo, corpo, errOut := exec(t, "review-comment", "-plan", caminho("testdata", "plans", "replace-common.json"), "-dir", "infra")
 	if codigo != 0 {
@@ -220,6 +269,9 @@ func TestErrosSaemComCodigo2(t *testing.T) {
 		"dep-audit com plano do Terraform":    {"dep-audit", "-report", caminho("testdata", "plans", "clean.json"), "-policy", caminho("config", "dependency-policy.json")},
 		"dep-audit com data inválida":         {"dep-audit", "-report", caminho("testdata", "real", "vuln-chamada.json"), "-policy", caminho("config", "dependency-policy.json"), "-today", "ontem"},
 		"dep-audit com relatório inexistente": {"dep-audit", "-report", "nao-existe.json", "-policy", caminho("config", "dependency-policy.json")},
+		"rollout-wait sem cluster":            {"rollout-wait", "-service", "web"},
+		"rollout-wait sem serviço":            {"rollout-wait", "-cluster", "demo"},
+		"rollout-wait com teto zero":          {"rollout-wait", "-cluster", "demo", "-service", "web", "-timeout", "0s"},
 		"tag-check com state":                 {"tag-check", "-plan", caminho("testdata", "plans", "not-a-plan.json"), "-policy", caminho("config", "tag-policy.json")},
 	}
 	for nome, args := range casos {

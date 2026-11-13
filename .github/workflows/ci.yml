@@ -296,6 +296,89 @@ jobs:
     with:
       versao: ${{ github.sha }}
 
+  # Espera de rollout contra um ECS SIMULADO (cmd/fake-ecs), do jeito que um
+  # consumidor usa a action. Cada cenário roda em uma porta. Os que devem
+  # reprovar são conferidos depois (outcome == failure).
+  dogfood-rollout:
+    name: Dogfood (rollout-wait, ECS simulado)
+    runs-on: ubuntu-latest
+    env:
+      # Credenciais falsas: o SDK assina a chamada, o simulador ignora.
+      AWS_ACCESS_KEY_ID: falso
+      AWS_SECRET_ACCESS_KEY: falso
+      AWS_REGION: us-east-1
+      TD_NOVA: arn:aws:ecs:us-east-1:123456789012:task-definition/web:2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Sobe o ECS simulado (um cenário por porta)
+        run: |
+          go build -o "$RUNNER_TEMP/fake-ecs" ./cmd/fake-ecs
+          porta=8761
+          for cenario in sucesso falha travado versao-antiga; do
+            "$RUNNER_TEMP/fake-ecs" -scenario "$cenario" -addr "127.0.0.1:$porta" > "$RUNNER_TEMP/fake-$cenario.log" 2>&1 &
+            for _ in $(seq 50); do
+              (echo > "/dev/tcp/127.0.0.1/$porta") 2>/dev/null && break
+              sleep 0.2
+            done
+            porta=$((porta + 1))
+          done
+
+      - name: Deploy que converge (deve liberar)
+        uses: ./.github/actions/rollout-wait
+        with:
+          cluster: demo
+          service: web
+          task-definition: ${{ env.TD_NOVA }}
+          endpoint: http://127.0.0.1:8761
+          interval: 200ms
+          timeout: 1m
+
+      - name: Versão antiga estável primeiro, a nova depois (deve liberar)
+        uses: ./.github/actions/rollout-wait
+        with:
+          cluster: demo
+          service: web
+          task-definition: ${{ env.TD_NOVA }}
+          endpoint: http://127.0.0.1:8764
+          interval: 200ms
+          timeout: 1m
+
+      - name: Circuit breaker dispara (deve reprovar na hora, sem esperar o teto)
+        id: falha
+        continue-on-error: true
+        uses: ./.github/actions/rollout-wait
+        with:
+          cluster: demo
+          service: web
+          task-definition: ${{ env.TD_NOVA }}
+          endpoint: http://127.0.0.1:8762
+          interval: 200ms
+          timeout: 10m
+
+      - name: Deploy travado (deve reprovar pelo teto)
+        id: travado
+        continue-on-error: true
+        uses: ./.github/actions/rollout-wait
+        with:
+          cluster: demo
+          service: web
+          task-definition: ${{ env.TD_NOVA }}
+          endpoint: http://127.0.0.1:8763
+          interval: 200ms
+          timeout: 2s
+
+      - name: Confirma que os dois cenários reprovaram de verdade
+        env:
+          FALHA: ${{ steps.falha.outcome }}
+          TRAVADO: ${{ steps.travado.outcome }}
+        run: |
+          [ "$FALHA" = "failure" ] || { echo "falha: esperava failure, veio $FALHA"; exit 1; }
+          [ "$TRAVADO" = "failure" ] || { echo "travado: esperava failure, veio $TRAVADO"; exit 1; }
+
   # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
   # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
   # reprova passaria no CI. Os comentários são fixtures no formato da API.
