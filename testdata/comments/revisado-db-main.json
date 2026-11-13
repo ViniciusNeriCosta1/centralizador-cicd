@@ -1,0 +1,9 @@
+[
+  {
+    "id": 303,
+    "user": {
+      "login": "github-actions[bot]"
+    },
+    "body": "### Plano revisado\n\n<!-- cicd:revisado {\"dir\":\".\",\"destroy\":[\"aws_db_instance.main\"]} -->\n"
+  }
+]

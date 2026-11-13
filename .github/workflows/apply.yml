@@ -1,0 +1,107 @@
+# Workflow reutilizável de apply: chamado em push na branch de produção.
+#
+# Fluxo: init -> plan -out -> show -json -> gate -> apply DO ARQUIVO do plano.
+# O gate avalia o mesmo arquivo que o apply executa, então não existe um
+# segundo plano que o gate nunca viu. O plano é apagado no fim (carrega o state
+# em texto puro).
+#
+# O que foi revisado vem do comentário que o plan-gate.yml publicou, via bot, no
+# pull request que gerou este commit. Destruição fora dessa lista é bloqueada.
+name: apply (reutilizável)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Diretório do módulo Terraform.
+        type: string
+        default: "."
+      terraform-version:
+        description: Use a MESMA versão do plan-gate.
+        type: string
+        default: "1.10.5"
+      init-args:
+        description: "Argumentos extras do `terraform init`, como -backend-config=..."
+        type: string
+        default: ""
+      plan-args:
+        description: "Argumentos extras do `terraform plan`, como -var-file=..."
+        type: string
+        default: ""
+      versao:
+        description: Ref (tag, branch ou sha) desta ferramenta a usar.
+        type: string
+        default: v1
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - name: terraform init e plan
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          INIT_ARGS: ${{ inputs.init-args }}
+          PLAN_ARGS: ${{ inputs.plan-args }}
+        run: |
+          # shellcheck disable=SC2086
+          terraform init -input=false $INIT_ARGS
+          # shellcheck disable=SC2086
+          terraform plan -input=false -out="$RUNNER_TEMP/plano.tfplan" $PLAN_ARGS
+          terraform show -json "$RUNNER_TEMP/plano.tfplan" > "$RUNNER_TEMP/plano.json"
+
+      # O pull request que gerou o commit tem o plano revisado (comentário do
+      # bot) e o label de aprovação. Sem pull request, não há referência.
+      - name: Busca o pull request do commit
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          echo '[]' > "$RUNNER_TEMP/comentarios.json"
+          echo "approved=false" >> "$GITHUB_OUTPUT"
+          pr="$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)"
+          if [ -z "$pr" ]; then
+            echo "nenhum pull request associado a $SHA: sem plano revisado para comparar"
+            exit 0
+          fi
+          echo "pull request #$pr"
+          gh api --paginate "repos/$REPO/issues/$pr/comments" > "$RUNNER_TEMP/comentarios.json"
+          if gh api "repos/$REPO/issues/$pr/labels" --jq '.[].name' | grep -qx 'destruicao-aprovada'; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Baixa a ferramenta na versão pedida
+        uses: actions/checkout@v4
+        with:
+          repository: ViniciusNeriCosta1/centralizador-cicd
+          ref: ${{ inputs.versao }}
+          path: .cicd-ferramenta
+
+      - name: Gate do apply
+        uses: ./.cicd-ferramenta/.github/actions/apply-gate
+        with:
+          plan-json: ${{ runner.temp }}/plano.json
+          comments-json: ${{ runner.temp }}/comentarios.json
+          dir: ${{ inputs.working-directory }}
+          approved: ${{ steps.pr.outputs.approved }}
+
+      # Aplica o ARQUIVO do plano: exatamente o que o gate avaliou.
+      - name: terraform apply do plano avaliado
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform apply -input=false "$RUNNER_TEMP/plano.tfplan"
+
+      - name: Apaga o plano (carrega o state em texto puro)
+        if: always()
+        run: rm -f "$RUNNER_TEMP/plano.tfplan" "$RUNNER_TEMP/plano.json" "$RUNNER_TEMP/comentarios.json"

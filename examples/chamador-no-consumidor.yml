@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write   # publica o plano revisado, que o apply usa
 
 jobs:
   plan-gate:
