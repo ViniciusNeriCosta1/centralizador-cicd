@@ -62,7 +62,7 @@ O projeto consumidor escreve só uma chamada
 ```yaml
 jobs:
   plan-gate:
-    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v1
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v2
     with:
       working-directory: infra
 ```
@@ -142,8 +142,14 @@ Uma tag `vX.Y.Z` (semver estrito, sem pré-release) dispara o
 4. move o alias da major (`v1`) para a tag nova, **só se ela for a maior versão
    daquela major**: publicar `1.0.1` depois de `1.1.0` não recua o `v1`.
 
-O consumidor escolhe: `@v1` recebe as correções compatíveis; `@v1.0.0` é
-imutável e reproduzível. Subir de major (`v2`) é decisão do consumidor.
+O consumidor escolhe: `@v2` recebe as correções compatíveis; `@v2.0.0` é
+imutável e reproduzível. Subir de major é decisão do consumidor.
+
+O `v1` ficou congelado em `1.1.0`. A `2.0.0` é major por dois motivos de
+contrato: o chamador precisa conceder `id-token: write`, e `plan-gate.yml` e
+`apply.yml` passam a bloquear recurso sem as tags obrigatórias. Para migrar
+do `v1`: troque `@v1` por `@v2`, adicione `id-token: write` às `permissions` do
+chamador e confira se os módulos têm as tags de `config/tag-policy.json`.
 
 ### Demonstração do label
 

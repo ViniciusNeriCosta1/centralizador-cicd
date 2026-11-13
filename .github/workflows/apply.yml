@@ -41,7 +41,7 @@ on:
       versao:
         description: Ref (tag, branch ou sha) desta ferramenta a usar.
         type: string
-        default: v1
+        default: v2
 
 permissions:
   contents: read

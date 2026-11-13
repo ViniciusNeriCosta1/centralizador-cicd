@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   apply:
-    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/apply.yml@v1
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/apply.yml@v2
     with:
       working-directory: infra
       # Role do apply: a trust policy só aceita o push na branch de produção.
