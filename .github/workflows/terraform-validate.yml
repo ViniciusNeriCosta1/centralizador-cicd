@@ -1,0 +1,41 @@
+# Workflow reutilizável: formatação e validade do Terraform, sem credenciais.
+#
+# Serve para rodar em todo pull request, antes do plan: erro de sintaxe e de
+# formatação não precisam de state nem de nuvem para aparecer.
+name: terraform-validate (reutilizável)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Diretório do módulo Terraform.
+        type: string
+        default: "."
+      terraform-version:
+        type: string
+        default: "1.10.5"
+      versao:
+        description: Ref (tag, branch ou sha) desta ferramenta a usar.
+        type: string
+        default: v1
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixa a ferramenta na versão pedida
+        uses: actions/checkout@v4
+        with:
+          repository: ViniciusNeriCosta1/centralizador-cicd
+          ref: ${{ inputs.versao }}
+          path: .cicd-ferramenta
+
+      - uses: ./.cicd-ferramenta/.github/actions/terraform-validate
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          terraform-version: ${{ inputs.terraform-version }}

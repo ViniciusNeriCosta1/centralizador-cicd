@@ -36,6 +36,11 @@ type Change struct {
 	// ReplacePaths lista os atributos que não podem ser alterados no lugar.
 	// Cada caminho é uma sequência de nomes (string) e índices (número).
 	ReplacePaths [][]any `json:"replace_paths"`
+	// After é o estado previsto do recurso (nulo quando ele só é destruído).
+	After map[string]any `json:"after"`
+	// AfterUnknown marca o que só será conhecido depois do apply: true para um
+	// atributo inteiro, ou um objeto com true nas chaves ainda desconhecidas.
+	AfterUnknown map[string]any `json:"after_unknown"`
 }
 
 // Parse lê um plano em JSON. Entrada que não parece um plano é erro:
@@ -71,6 +76,16 @@ func (p *Plan) Destroyed() []string {
 func (c Change) destroys() bool {
 	for _, a := range c.Actions {
 		if a == "delete" {
+			return true
+		}
+	}
+	return false
+}
+
+// Writes diz se o recurso existirá depois do apply (criado ou atualizado).
+func (c Change) Writes() bool {
+	for _, a := range c.Actions {
+		if a == "create" || a == "update" {
 			return true
 		}
 	}

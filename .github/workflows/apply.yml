@@ -89,6 +89,7 @@ jobs:
           terraform_wrapper: false
 
       - name: terraform init e plan
+        id: plano
         working-directory: ${{ inputs.working-directory }}
         env:
           INIT_ARGS: ${{ inputs.init-args }}
@@ -136,6 +137,14 @@ jobs:
           comments-json: ${{ runner.temp }}/comentarios.json
           dir: ${{ inputs.working-directory }}
           approved: ${{ steps.pr.outputs.approved }}
+
+      # As tags também valem no apply: o plano pode ter mudado desde o pull
+      # request. Se o gate ou as tags reprovam, o apply abaixo não roda.
+      - name: Gate de tags obrigatórias
+        if: ${{ !cancelled() && steps.plano.outcome == 'success' }}
+        uses: ./.cicd-ferramenta/.github/actions/tag-check
+        with:
+          plan-json: ${{ runner.temp }}/plano.json
 
       # Aplica o ARQUIVO do plano: exatamente o que o gate avaliou.
       - name: terraform apply do plano avaliado

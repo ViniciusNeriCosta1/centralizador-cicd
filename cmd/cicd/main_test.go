@@ -92,6 +92,35 @@ func TestApplyGate(t *testing.T) {
 	}
 }
 
+func TestTagCheck(t *testing.T) {
+	pol := caminho("config", "tag-policy.json")
+	real := func(nome string) string { return caminho("testdata", "real", nome) }
+	casos := []struct {
+		nome   string
+		args   []string
+		codigo int
+		trecho string
+	}{
+		{"plano real com as três tags libera",
+			[]string{"tag-check", "-plan", real("tags-ok.json"), "-policy", pol}, 0, "OK: 1 recurso(s)"},
+		{"plano real sem Environment e Owner reprova",
+			[]string{"tag-check", "-plan", real("tags-faltando.json"), "-policy", pol}, 1, "falta Environment, Owner"},
+		{"recurso sem suporte a tags não é conferido",
+			[]string{"tag-check", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", pol}, 0, "OK"},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			codigo, out, errOut := exec(t, c.args...)
+			if codigo != c.codigo {
+				t.Fatalf("código = %d, quer %d\nstdout: %s\nstderr: %s", codigo, c.codigo, out, errOut)
+			}
+			if !strings.Contains(out, c.trecho) {
+				t.Errorf("stdout deveria conter %q:\n%s", c.trecho, out)
+			}
+		})
+	}
+}
+
 func TestReviewCommentEReviewedIDFazemIdaEVolta(t *testing.T) {
 	codigo, corpo, errOut := exec(t, "review-comment", "-plan", caminho("testdata", "plans", "replace-common.json"), "-dir", "infra")
 	if codigo != 0 {
@@ -130,19 +159,23 @@ func TestErrosSaemComCodigo2(t *testing.T) {
 		t.Fatal(err)
 	}
 	casos := map[string][]string{
-		"sem argumentos":                {},
-		"apply-gate sem plano":          {"apply-gate", "-policy", pol},
-		"comentários inexistentes":      {"apply-gate", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", pol, "-comments", "nao-existe.json"},
-		"comentários que não são lista": {"apply-gate", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", pol, "-comments", caminho("testdata", "plans", "clean.json")},
-		"marcador do bot ilegível":      {"apply-gate", "-plan", caminho("testdata", "plans", "replace-common.json"), "-policy", pol, "-comments", caminho("testdata", "comments", "marcador-ilegivel.json")},
-		"review-comment sem plano":      {"review-comment"},
-		"reviewed-id sem comentários":   {"reviewed-id"},
-		"subcomando desconhecido":       {"deploy"},
-		"falta -policy":                 {"plan-gate", "-plan", caminho("testdata", "plans", "clean.json")},
-		"plano inexistente":             {"plan-gate", "-plan", "nao-existe.json", "-policy", pol},
-		"state no lugar de plano":       {"plan-gate", "-plan", caminho("testdata", "plans", "not-a-plan.json"), "-policy", pol},
-		"política inválida":             {"plan-gate", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", ruim},
-		"flag desconhecida":             {"plan-gate", "-nada"},
+		"sem argumentos":                      {},
+		"apply-gate sem plano":                {"apply-gate", "-policy", pol},
+		"comentários inexistentes":            {"apply-gate", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", pol, "-comments", "nao-existe.json"},
+		"comentários que não são lista":       {"apply-gate", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", pol, "-comments", caminho("testdata", "plans", "clean.json")},
+		"marcador do bot ilegível":            {"apply-gate", "-plan", caminho("testdata", "plans", "replace-common.json"), "-policy", pol, "-comments", caminho("testdata", "comments", "marcador-ilegivel.json")},
+		"review-comment sem plano":            {"review-comment"},
+		"reviewed-id sem comentários":         {"reviewed-id"},
+		"subcomando desconhecido":             {"deploy"},
+		"falta -policy":                       {"plan-gate", "-plan", caminho("testdata", "plans", "clean.json")},
+		"plano inexistente":                   {"plan-gate", "-plan", "nao-existe.json", "-policy", pol},
+		"state no lugar de plano":             {"plan-gate", "-plan", caminho("testdata", "plans", "not-a-plan.json"), "-policy", pol},
+		"política inválida":                   {"plan-gate", "-plan", caminho("testdata", "plans", "clean.json"), "-policy", ruim},
+		"flag desconhecida":                   {"plan-gate", "-nada"},
+		"tag-check sem política":              {"tag-check", "-plan", caminho("testdata", "real", "tags-ok.json")},
+		"tag-check sem plano":                 {"tag-check", "-policy", caminho("config", "tag-policy.json")},
+		"tag-check com política de plan-gate": {"tag-check", "-plan", caminho("testdata", "real", "tags-ok.json"), "-policy", caminho("config", "plan-policy.json")},
+		"tag-check com state":                 {"tag-check", "-plan", caminho("testdata", "plans", "not-a-plan.json"), "-policy", caminho("config", "tag-policy.json")},
 	}
 	for nome, args := range casos {
 		t.Run(nome, func(t *testing.T) {

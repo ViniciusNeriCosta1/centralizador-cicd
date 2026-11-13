@@ -1,0 +1,35 @@
+name: terraform-validate
+description: Confere formatação (fmt) e validade (validate) de um módulo Terraform, sem credenciais.
+
+inputs:
+  working-directory:
+    description: Diretório do módulo Terraform.
+    required: false
+    default: "."
+  terraform-version:
+    description: Versão do Terraform.
+    required: false
+    default: "1.10.5"
+
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+
+    - name: terraform fmt
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform fmt -check -diff -recursive -no-color
+
+    # Roda mesmo com o fmt reprovado, para o autor ver os dois problemas de uma vez.
+    # `-backend=false`: não precisa de state nem de credenciais para validar.
+    - name: terraform validate
+      if: ${{ !cancelled() }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        terraform init -backend=false -input=false -no-color
+        terraform validate -no-color

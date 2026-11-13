@@ -12,10 +12,19 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 - `examples/aws-oidc-trust.tf`: as duas roles (plan e apply) com trust policy
   presa ao `sub` do token.
 - Job `oidc-claims` no CI: pede o token OIDC e confere `aud` e `sub`.
+- `cicd tag-check`, a action `tag-check` e `config/tag-policy.json`: reprova
+  recurso criado ou atualizado sem as tags obrigatórias, lidas do `tags_all` do
+  plano (com o `default_tags` do provider). Tags que só serão conhecidas depois
+  do apply reprovam como "não verificáveis".
+- Workflow reutilizável `terraform-validate.yml` e action `terraform-validate`:
+  `terraform fmt -check` e `terraform validate`, sem credenciais.
 
 ### Alterado
 - **Quebra de contrato:** os dois workflows reutilizáveis passam a pedir
   `id-token: write`. O chamador precisa concedê-la.
+- **Quebra de contrato:** `plan-gate.yml` e `apply.yml` passam a rodar o gate de
+  tags. Um módulo que cria recurso sem as tags obrigatórias, e antes passava,
+  agora reprova.
 
 ## [1.1.0] - 2026-11-13
 

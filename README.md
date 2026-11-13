@@ -222,6 +222,44 @@ Limites conhecidos:
   repositório, não em um único job.
 - Sem login na nuvem, sem ambiente protegido e sem `-target`.
 
+### Tags obrigatórias
+
+`cicd tag-check` confere se os recursos que o plano **cria ou atualiza** têm as
+tags de [`config/tag-policy.json`](config/tag-policy.json) (hoje `Project`,
+`Environment` e `Owner`). A conferência é feita no plano, e não no código: o
+`tags_all` de um recurso AWS já vem com o `default_tags` do provider misturado,
+que é o que de fato vai para a nuvem.
+
+| Situação | Resultado |
+|---|---|
+| Todas as tags presentes | liberado |
+| Falta tag, ou valor vazio | **reprova**, dizendo qual recurso e qual tag |
+| Recurso sem suporte a tags (`terraform_data`, por exemplo) | não conta |
+| Só destruir, sem mudança, data source | não conta |
+| `tags_all` só será conhecido depois do apply | **reprova** como "não verificável" |
+| Severidade `aviso` na política | nunca reprova |
+| `required_tags` vazio ou severidade desconhecida | **erro (código 2)**: o gate não exigiria nada |
+
+O caso "não verificável" é de propósito: se o plano não permite conferir, o gate
+não finge que conferiu. O gate de tags roda no `plan-gate.yml` (no pull request)
+e de novo no `apply.yml`, porque o plano pode ter mudado entre os dois.
+
+Os testes usam planos **reais** do Terraform com o provider da AWS, sem nuvem e
+sem credenciais ([`scripts/gerar-planos-tags.sh`](scripts/gerar-planos-tags.sh)).
+
+### Validação de Terraform
+
+O workflow reutilizável
+[`terraform-validate.yml`](.github/workflows/terraform-validate.yml) roda
+`terraform fmt -check` e `terraform validate` (com `init -backend=false`), sem
+credenciais e sem state. Os dois rodam mesmo quando o primeiro reprova, para o
+autor ver os dois problemas de uma vez. Não pede `id-token`: quem só valida não
+precisa de nuvem.
+
+No CI, dois módulos inválidos garantem que o gate reprova de verdade: um está
+mal formatado e é válido, o outro está bem formatado e é inválido. Assim cada
+reprovação aponta para a checagem certa.
+
 ## Como rodar
 
 Com Go instalado:
@@ -259,6 +297,9 @@ cicd plan-gate -plan plano.json -policy config/plan-policy.json
   gera um plano com recriação usando só o provider embutido do Terraform
   (`terraform_data`), sem nuvem. Garante que o parser lê o formato que o
   Terraform produz, e não só os JSONs escritos à mão.
+- **Tags**: valor vazio, `tags_all` que vale mais que `tags`, tag desconhecida
+  mas com chave presente, `tags_all` inteiro desconhecido, atualização e
+  recriação, tipo ignorado, severidade `aviso`, política vazia.
 - Regra de recriação coberta: só destruir não conta, `create_before_destroy`
   conta, *data sources* não contam.
 - **Apply gateado**: comentário forjado por quem não é o bot, marcador ilegível,
@@ -273,21 +314,20 @@ cmd/cicd/            ponto de entrada e códigos de saída
 internal/plan/       leitura do plano em JSON
 internal/policy/     carga e validação da política
 internal/gate/       regras e relatório do gate de recriação
+internal/tags/       política e gate de tags obrigatórias
 internal/delta/      destruição do apply x plano revisado; comentário do PR
-config/              política distribuída
+config/              políticas distribuídas (recriação e tags)
 testdata/            planos, comentários de PR e módulos de exemplo
 examples/            como um projeto consumidor chama os workflows
-scripts/             gerador do plano real
-.github/actions/     plan-gate e apply-gate
-.github/workflows/   plan-gate, apply, release, CI e demonstração
+scripts/             geradores dos planos reais
+.github/actions/     plan-gate, apply-gate, tag-check e terraform-validate
+.github/workflows/   plan-gate, apply, terraform-validate, release, CI e demonstração
 ```
 
 ## Planejado
 
 Ainda **não implementado**; entra por etapas, cada uma com testes:
 
-- Login na nuvem (OIDC) no workflow reutilizável, para planos com backend remoto.
-- Validação de Terraform (formato, `validate`, tags obrigatórias).
 - Auditoria de dependências com política de severidade em arquivo.
 - Espera de *rollout* por estado, não por tempo fixo, testada contra uma AWS
   simulada.
