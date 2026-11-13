@@ -1,0 +1,6 @@
+{"format_version":"1.2","terraform_version":"1.10.5","resource_changes":[
+ {"address":"aws_rds_cluster.db","mode":"managed","type":"aws_rds_cluster","name":"db","change":{"actions":["delete","create"],"replace_paths":[["engine"]]}},
+ {"address":"aws_ecs_task_definition.app","mode":"managed","type":"aws_ecs_task_definition","name":"app","change":{"actions":["delete","create"]}},
+ {"address":"aws_instance.web","mode":"managed","type":"aws_instance","name":"web","change":{"actions":["delete","create"],"replace_paths":[["ami"]]}},
+ {"address":"data.aws_ami.base","mode":"data","type":"aws_ami","name":"base","change":{"actions":["delete","create"]}}
+]}

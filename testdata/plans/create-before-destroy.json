@@ -1,0 +1,3 @@
+{"format_version":"1.2","terraform_version":"1.10.5","resource_changes":[
+ {"address":"aws_security_group.web","mode":"managed","type":"aws_security_group","name":"web","change":{"actions":["create","delete"],"replace_paths":[["name"],["ingress",0,"cidr_blocks"]]}}
+]}

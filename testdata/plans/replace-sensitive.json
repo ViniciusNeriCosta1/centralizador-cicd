@@ -1,0 +1,4 @@
+{"format_version":"1.2","terraform_version":"1.10.5","resource_changes":[
+ {"address":"aws_db_instance.main","mode":"managed","type":"aws_db_instance","name":"main","change":{"actions":["delete","create"],"replace_paths":[["identifier"]]}},
+ {"address":"aws_security_group.web","mode":"managed","type":"aws_security_group","name":"web","change":{"actions":["update"]}}
+]}

@@ -1,0 +1,17 @@
+# Ambiente de demonstração: nada aqui precisa de conta em nuvem.
+services:
+  # docker compose run --rm tests
+  tests:
+    build:
+      context: .
+      target: test
+    profiles: ["tests"]
+
+  # docker compose run --rm gate plan-gate -plan /work/testdata/plans/replace-sensitive.json -policy /etc/cicd/plan-policy.json
+  gate:
+    build:
+      context: .
+      target: runtime
+    volumes:
+      - ./testdata:/work/testdata:ro
+    profiles: ["demo"]

@@ -1,0 +1,6 @@
+bin/
+*.tfplan
+*.tfstate
+*.tfstate.*
+.terraform/
+.env
