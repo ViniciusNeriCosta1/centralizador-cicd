@@ -164,6 +164,12 @@ Pontos de desenho:
   cada módulo tem a sua referência.
 - **O marcador não quebra com `-->`.** O JSON é escrito com `<` e `>` escapados.
 
+A demonstração sem nuvem está em
+[`testdata/tf/recria-estado`](testdata/tf/recria-estado): um estado local diz que
+um `terraform_data` existe com `"v1"` e o código pede `"v2"`, o que recria o
+recurso. No pull request o plano revisado lista a destruição; no push na `main`
+o job `apply-e2e` do CI acha o pull request do commit, compara e aplica.
+
 Limites conhecidos:
 
 - O label vale para o pull request como está no momento do merge; não há

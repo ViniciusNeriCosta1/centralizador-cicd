@@ -167,3 +167,30 @@ jobs:
     with:
       working-directory: testdata/tf/limpo
       versao: ${{ github.sha }}
+
+  # Demonstração de ponta a ponta do apply COM destruição, sem nuvem.
+  #
+  # Em pull request, o plan-gate publica (via bot) a destruição prevista de
+  # testdata/tf/recria-estado. No push na main, o apply acha o pull request do
+  # commit, lê esse comentário e só libera porque a destruição estava nele.
+  # É o único job que exercita a busca do PR por commit com um merge de verdade.
+  contrato-recriacao:
+    name: Plano revisado com destruição (publica no PR)
+    uses: ./.github/workflows/plan-gate.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working-directory: testdata/tf/recria-estado
+      versao: ${{ github.sha }}
+
+  apply-e2e:
+    name: Apply com destruição (só no push na main)
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/apply.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      working-directory: testdata/tf/recria-estado
+      versao: ${{ github.sha }}
