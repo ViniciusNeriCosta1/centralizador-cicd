@@ -206,6 +206,9 @@ func TestRolloutWait(t *testing.T) {
 			if !strings.Contains(out, c.trecho) {
 				t.Errorf("stdout deveria conter %q:\n%s", c.trecho, out)
 			}
+			if strings.Contains(out, "..") {
+				t.Errorf("ponto duplicado na saída:\n%s", out)
+			}
 		})
 	}
 }

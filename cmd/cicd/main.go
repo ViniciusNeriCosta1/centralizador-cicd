@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"centralizador-cicd/internal/delta"
@@ -358,7 +359,7 @@ func rolloutWait(args []string, stdout, stderr io.Writer) int {
 			*timeout, res.Polls, res.Verdict.Reason)
 		return 1
 	default:
-		fmt.Fprintf(stdout, "\nResultado do rollout: REPROVADO. %s.\n", res.Verdict.Reason)
+		fmt.Fprintf(stdout, "\nResultado do rollout: REPROVADO. %s.\n", strings.TrimSuffix(res.Verdict.Reason, "."))
 		return 1
 	}
 }
