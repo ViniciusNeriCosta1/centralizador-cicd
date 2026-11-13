@@ -10,11 +10,22 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
   `dependency-audit.yml`: política de dependências sobre o `govulncheck`, por
   nível de alcançabilidade (`chamada` reprova; `pacote` e `modulo` avisam), com
   exceções que têm motivo e prazo. `config/dependency-policy.json`.
+- `cicd rollout-wait` e a action `rollout-wait`: espera o deploy de um serviço ECS
+  pelo ESTADO (estável, falho, em andamento), e não por tempo fixo; o tempo é só
+  o teto. Confere a task definition, para a versão antiga estável não encerrar a
+  espera. Usa o SDK da AWS.
+- `cmd/fake-ecs` e `internal/fakeecs`: um ECS simulado (só `DescribeServices`)
+  com cenários por número de consulta, para provar a espera sem conta AWS.
 
 ### Alterado
-- Go mínimo sobe de 1.22 para 1.26 (`go.mod` e `Dockerfile`). A própria auditoria
+- A imagem Docker passa de menos de 10 MB para cerca de 20 MB (SDK da AWS).
+- Go mínimo sobe de 1.22 para 1.26.11 (`go.mod` e `Dockerfile`). A própria auditoria
   apontou, no primeiro uso real, uma vulnerabilidade chamada pelo código na
-  biblioteca padrão do 1.22 (GO-2025-3750, `os.ReadFile`), já fora de suporte.
+  biblioteca padrão do 1.22 (GO-2025-3750, `os.ReadFile`), já fora de suporte. O
+  piso é o patch 1.26.11, que corrige GO-2026-6859 (`net/http`), alcançada pelo
+  SDK da AWS.
+- A action `dependency-audit` usa `check-latest` no Go do projeto: o resultado
+  não depende mais do patch que estiver em cache no runner.
 
 ## [2.0.0] - 2026-11-13
 

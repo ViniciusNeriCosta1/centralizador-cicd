@@ -1,0 +1,74 @@
+name: rollout-wait
+description: Espera o deploy de um serviço ECS terminar, pelo estado do serviço (e não por tempo fixo).
+
+inputs:
+  cluster:
+    description: Nome do cluster ECS.
+    required: true
+  service:
+    description: Nome do serviço ECS.
+    required: true
+  task-definition:
+    description: >-
+      ARN da task definition que o deploy deve colocar no ar. Recomendado: sem
+      ele, a versão ANTIGA ainda estável logo após o update-service encerra a
+      espera cedo demais.
+    required: false
+    default: ""
+  region:
+    description: "Região da AWS (padrão: AWS_REGION do ambiente)."
+    required: false
+    default: ""
+  timeout:
+    description: "Teto da espera, como 15m. Não é a duração normal."
+    required: false
+    default: 15m
+  interval:
+    description: Pausa entre as consultas.
+    required: false
+    default: 10s
+  endpoint:
+    description: Endpoint alternativo, para um simulador. Vazio = o ECS de verdade.
+    required: false
+    default: ""
+
+# As credenciais vêm do ambiente do job (por exemplo, o passo de OIDC do
+# workflow chamador): esta action não pede nem guarda chave nenhuma.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache: false
+
+    - name: Compila o cicd
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      run: go build -trimpath -o "$RUNNER_TEMP/cicd" ./cmd/cicd
+
+    - name: Espera o rollout
+      shell: bash
+      env:
+        CLUSTER: ${{ inputs.cluster }}
+        SERVICE: ${{ inputs.service }}
+        TASK_DEFINITION: ${{ inputs.task-definition }}
+        REGION: ${{ inputs.region }}
+        TIMEOUT: ${{ inputs.timeout }}
+        INTERVAL: ${{ inputs.interval }}
+        ENDPOINT: ${{ inputs.endpoint }}
+      run: |
+        set -o pipefail
+        args=(rollout-wait -cluster "$CLUSTER" -service "$SERVICE" -timeout "$TIMEOUT" -interval "$INTERVAL")
+        if [ -n "$TASK_DEFINITION" ]; then args+=(-task-definition "$TASK_DEFINITION"); fi
+        if [ -n "$REGION" ]; then args+=(-region "$REGION"); fi
+        if [ -n "$ENDPOINT" ]; then args+=(-endpoint "$ENDPOINT"); fi
+        "$RUNNER_TEMP/cicd" "${args[@]}" | tee "$RUNNER_TEMP/relatorio-rollout.txt"
+        status=$?
+        {
+          echo '### rollout-wait'
+          echo '```'
+          cat "$RUNNER_TEMP/relatorio-rollout.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$status"
