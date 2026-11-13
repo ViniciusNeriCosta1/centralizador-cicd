@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Nível 1: lógica de cada peça.
+  testes:
+    name: Testes (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  # Nível 1b: a mesma suíte, dentro do container.
+  docker:
+    name: Testes (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target test -t cicd-test .
+
+  # Nível 2: a action, do jeito que um consumidor a usa.
+  # Cada cenário que deve falhar é seguido de uma conferência de que falhou
+  # de verdade: sem ela, um gate quebrado que nunca reprova passaria no CI.
+  dogfood:
+    name: Dogfood (action de verdade)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recriação de banco sem aprovação (deve reprovar)
+        id: sem-aprovacao
+        continue-on-error: true
+        uses: ./.github/actions/plan-gate
+        with:
+          plan-json: testdata/plans/replace-sensitive.json
+
+      - name: Confirma que reprovou de verdade
+        env:
+          RESULTADO: ${{ steps.sem-aprovacao.outcome }}
+        run: |
+          if [ "$RESULTADO" != "failure" ]; then
+            echo "esperava failure, veio: $RESULTADO"
+            exit 1
+          fi
+
+      - name: Recriação de banco com aprovação (deve liberar)
+        uses: ./.github/actions/plan-gate
+        with:
+          plan-json: testdata/plans/replace-sensitive.json
+          approved: "true"
+
+      - name: Task definition do ECS é ignorada (deve liberar)
+        uses: ./.github/actions/plan-gate
+        with:
+          plan-json: testdata/plans/replace-ignored.json
+
+      - name: Entrada que não é plano (deve reprovar, nunca liberar)
+        id: nao-e-plano
+        continue-on-error: true
+        uses: ./.github/actions/plan-gate
+        with:
+          plan-json: testdata/plans/not-a-plan.json
+
+      - name: Confirma que erro de leitura reprovou de verdade
+        env:
+          RESULTADO: ${{ steps.nao-e-plano.outcome }}
+        run: |
+          if [ "$RESULTADO" != "failure" ]; then
+            echo "esperava failure, veio: $RESULTADO"
+            exit 1
+          fi
+
+  # Nível 3: o workflow reutilizável inteiro (inputs, ligação dos passos,
+  # terraform init/plan/show). Chamada no mesmo repositório, com a ferramenta
+  # na versão do commit que está sendo testado.
+  contrato:
+    name: Contrato do workflow reutilizável
+    uses: ./.github/workflows/plan-gate.yml
+    with:
+      working-directory: testdata/tf/limpo
+      versao: ${{ github.sha }}

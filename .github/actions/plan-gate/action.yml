@@ -1,0 +1,48 @@
+name: plan-gate
+description: Reprova a recriação de recursos sensíveis em um plano do Terraform (JSON).
+
+inputs:
+  plan-json:
+    description: Caminho do plano em JSON (saída de `terraform show -json`).
+    required: true
+  approved:
+    description: >-
+      "true" quando a recriação de recursos sensíveis foi aprovada de forma
+      explícita (no workflow reutilizável, vem do label do pull request).
+    required: false
+    default: "false"
+
+# Não existe input de política: todo consumidor recebe a mesma regra, a que
+# está em config/plan-policy.json na versão da ferramenta que foi escolhida.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache: false
+
+    - name: Compila o cicd
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      run: go build -trimpath -o "$RUNNER_TEMP/cicd" ./cmd/cicd
+
+    - name: Gate de recriação
+      shell: bash
+      env:
+        PLAN_JSON: ${{ inputs.plan-json }}
+        APPROVED: ${{ inputs.approved }}
+        POLICY: ${{ github.action_path }}/../../../config/plan-policy.json
+      run: |
+        set -o pipefail
+        args=(plan-gate -plan "$PLAN_JSON" -policy "$POLICY")
+        if [ "$APPROVED" = "true" ]; then args+=(-approved); fi
+        "$RUNNER_TEMP/cicd" "${args[@]}" | tee "$RUNNER_TEMP/relatorio.txt"
+        status=$?
+        {
+          echo '### plan-gate'
+          echo '```'
+          cat "$RUNNER_TEMP/relatorio.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$status"

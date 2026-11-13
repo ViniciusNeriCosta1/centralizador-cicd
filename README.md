@@ -54,6 +54,39 @@ tipos sensíveis e tipos ignorados. Não existe configuração por repositório;
 um projeto precisa de outro comportamento, muda-se o padrão central.
 Severidade desconhecida é erro, para o gate não ficar mais frouxo em silêncio.
 
+### Workflow reutilizável do GitHub Actions
+
+O projeto consumidor escreve só uma chamada
+([`examples/chamador-no-consumidor.yml`](examples/chamador-no-consumidor.yml)):
+
+```yaml
+jobs:
+  plan-gate:
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@main
+    with:
+      working-directory: infra
+```
+
+O workflow roda `terraform init`, `plan` e `show -json`, e aplica o gate. Pontos
+de desenho:
+
+- **Aprovação por label.** Adicionar o label `destruicao-aprovada` ao pull
+  request libera a recriação de recursos sensíveis. Para o gate rodar de novo ao
+  adicionar ou remover o label, o chamador dispara também em `labeled` e
+  `unlabeled` (já está no exemplo).
+- **Sem override de política.** O workflow não tem input de política: todo
+  consumidor recebe a regra de `config/plan-policy.json` na versão escolhida em
+  `versao`.
+- **O plano não vira artifact.** Ele fica em `RUNNER_TEMP` e é apagado no fim,
+  porque carrega o state em texto puro.
+- **Sem credenciais de nuvem ainda.** O `terraform init` aceita argumentos
+  extras (`init-args`), mas não há passo de login na nuvem. Hoje serve para
+  módulos sem backend remoto.
+
+O CI deste repositório exercita as três camadas: testes unitários, a action
+usada como um consumidor a usa (cada cenário que deve reprovar é conferido
+depois) e o workflow reutilizável inteiro.
+
 ## Como rodar
 
 Com Go instalado:
@@ -110,8 +143,8 @@ scripts/             gerador do plano real
 
 Ainda **não implementado**; entra por etapas, cada uma com testes:
 
-- Workflow reutilizável do GitHub Actions que chama o `plan-gate` e lê a
-  aprovação de um *label* do pull request.
+- Login na nuvem (OIDC) no workflow reutilizável, para planos com backend remoto.
+- Releases com tags semver e um alias móvel `v1`, para o consumidor fixar `@v1`.
 - Gate de *apply*: aplicar o próprio arquivo do plano que foi avaliado.
 - Validação de Terraform (formato, `validate`, tags obrigatórias).
 - Auditoria de dependências com política de severidade em arquivo.
