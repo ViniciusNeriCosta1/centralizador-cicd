@@ -100,15 +100,22 @@ O que importa não está no workflow, e sim na **trust policy da role**
 
 | Role | Quem pode assumir (`sub` do token) | Permissão |
 |---|---|---|
-| plan | `repo:dono/repo:pull_request` | só leitura |
-| apply | `repo:dono/repo:ref:refs/heads/main` | o que o módulo precisa criar |
+| plan | `<prefixo>:pull_request` | só leitura |
+| apply | `<prefixo>:ref:refs/heads/main` | o que o módulo precisa criar |
+
+O `<prefixo>` depende do repositório. Os criados depois de 15/07/2026 (ou que
+optaram) usam o `sub` **imutável**, com os IDs numéricos do dono e do
+repositório: `repo:dono@123/repo@456`. Os demais usam o formato antigo,
+`repo:dono/repo`. Uma trust policy no formato errado simplesmente nega o acesso.
+Este repositório foi criado depois da data, e o job `oidc-claims` do CI mostrou
+o formato imutável.
 
 Por isso são duas roles: um pull request nunca assume a role do apply, mesmo que
 alguém altere o workflow. A condição é `StringEquals` no `sub` inteiro; com
 `repo:dono/*` qualquer repositório do dono assumiria a role.
 
-O job `oidc-claims` do CI pede o token de verdade e confere `aud` e `sub` (sem
-nuvem: o token só vai ao endpoint do GitHub). O exemplo de trust policy passa
+O job `oidc-claims` do CI pede o token de verdade, confere `aud` e `sub` e diz
+em qual formato o `sub` veio (sem nuvem: o token só vai ao endpoint do GitHub). O exemplo de trust policy passa
 por `terraform fmt` e `validate`.
 
 Limites:

@@ -12,7 +12,16 @@
 # A condição usa StringEquals e o `sub` inteiro. `repo:dono/*` (StringLike)
 # deixaria qualquer repositório do dono assumir a role.
 #
-# Os valores abaixo são fictícios. Troque `github_repo` pelo seu repositório.
+# O formato do `sub` depende do repositório:
+#   imutável (criado depois de 15/07/2026, ou que optou):
+#       repo:dono@ID_DO_DONO/repositorio@ID_DO_REPO:pull_request
+#   antigo (por nome):
+#       repo:dono/repositorio:pull_request
+# Os IDs vêm de `gh api repos/dono/repositorio --jq '.id, .owner.id'`. Confira o
+# formato real do seu repositório pelo job `oidc-claims` do CI deste projeto, ou
+# imprimindo o claim `sub`: uma trust policy no formato errado nega o acesso.
+#
+# Os valores abaixo são fictícios.
 
 terraform {
   required_providers {
@@ -23,10 +32,10 @@ terraform {
   }
 }
 
-variable "github_repo" {
-  description = "Repositório no formato dono/nome."
+variable "github_sub_prefix" {
+  description = "Prefixo do `sub` do repositório: repo:dono@ID/nome@ID (imutável) ou repo:dono/nome (antigo)."
   type        = string
-  default     = "dono/repositorio"
+  default     = "repo:dono@1000000/repositorio@2000000"
 }
 
 variable "producao_branch" {
@@ -65,7 +74,7 @@ data "aws_iam_policy_document" "confianca_plan" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_host}:sub"
-      values   = ["repo:${var.github_repo}:pull_request"]
+      values   = ["${var.github_sub_prefix}:pull_request"]
     }
   }
 }
@@ -85,7 +94,7 @@ data "aws_iam_policy_document" "confianca_apply" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_host}:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/${var.producao_branch}"]
+      values   = ["${var.github_sub_prefix}:ref:refs/heads/${var.producao_branch}"]
     }
   }
 }

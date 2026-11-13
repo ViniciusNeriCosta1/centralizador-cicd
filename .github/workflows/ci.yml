@@ -109,6 +109,9 @@ jobs:
       - name: Pede o token e confere audience e subject
         env:
           REPO: ${{ github.repository }}
+          REPO_ID: ${{ github.repository_id }}
+          OWNER: ${{ github.repository_owner }}
+          OWNER_ID: ${{ github.repository_owner_id }}
           EVENTO: ${{ github.event_name }}
           REF: ${{ github.ref }}
         run: |
@@ -123,16 +126,30 @@ jobs:
           print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))))')"
           echo "$claims" | jq '{iss, aud, sub, repository, ref, event_name, job_workflow_ref}'
 
+          # Repositórios criados depois de 15/07/2026 (ou que optaram) usam o
+          # `sub` imutável, com os IDs numéricos. Os demais, o formato antigo.
           if [ "$EVENTO" = "pull_request" ]; then
-            esperado="repo:$REPO:pull_request"
+            fim="pull_request"
           else
-            esperado="repo:$REPO:ref:$REF"
+            fim="ref:$REF"
           fi
+          nome="${REPO#*/}"
+          antigo="repo:$REPO:$fim"
+          imutavel="repo:$OWNER@$OWNER_ID/$nome@$REPO_ID:$fim"
           aud="$(echo "$claims" | jq -r .aud)"
           sub="$(echo "$claims" | jq -r .sub)"
           [ "$aud" = "sts.amazonaws.com" ] || { echo "aud inesperado: $aud"; exit 1; }
-          [ "$sub" = "$esperado" ] || { echo "sub inesperado: $sub (esperado $esperado)"; exit 1; }
-          echo "sub e aud conferem: $sub"
+          if [ "$sub" = "$imutavel" ]; then
+            formato="imutável"
+          elif [ "$sub" = "$antigo" ]; then
+            formato="antigo (por nome)"
+          else
+            echo "sub inesperado: $sub"
+            echo "esperado: $imutavel"
+            echo "      ou: $antigo"
+            exit 1
+          fi
+          echo "sub e aud conferem, formato $formato: $sub"
 
   # Gate do apply, do jeito que um consumidor o usa. Cada cenário que deve
   # reprovar é conferido depois (outcome == failure): sem isso, um gate que nunca
