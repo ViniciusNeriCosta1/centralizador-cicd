@@ -1,0 +1,75 @@
+# Workflow reutilizável: o projeto consumidor só chama este arquivo.
+#
+# Gera o plano do Terraform, converte para JSON e aplica o gate de recriação.
+# O plano fica em RUNNER_TEMP e é apagado no fim: ele carrega o state em texto
+# puro e NÃO deve virar artifact.
+name: plan-gate (reutilizável)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Diretório do módulo Terraform.
+        type: string
+        default: "."
+      terraform-version:
+        type: string
+        default: "1.10.5"
+      init-args:
+        description: "Argumentos extras do `terraform init`, como -backend-config=..."
+        type: string
+        default: ""
+      plan-args:
+        description: "Argumentos extras do `terraform plan`, como -var-file=..."
+        type: string
+        default: ""
+      versao:
+        description: Ref (tag, branch ou sha) desta ferramenta a usar.
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  plan-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - name: terraform init e plan
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          INIT_ARGS: ${{ inputs.init-args }}
+          PLAN_ARGS: ${{ inputs.plan-args }}
+        run: |
+          # Os argumentos extras são separados por espaço de propósito.
+          # shellcheck disable=SC2086
+          terraform init -input=false $INIT_ARGS
+          # shellcheck disable=SC2086
+          terraform plan -input=false -out="$RUNNER_TEMP/plano.tfplan" $PLAN_ARGS
+          terraform show -json "$RUNNER_TEMP/plano.tfplan" > "$RUNNER_TEMP/plano.json"
+
+      - name: Baixa a ferramenta na versão pedida
+        uses: actions/checkout@v4
+        with:
+          repository: ViniciusNeriCosta1/centralizador-cicd
+          ref: ${{ inputs.versao }}
+          path: .cicd-ferramenta
+
+      - name: Gate de recriação
+        uses: ./.cicd-ferramenta/.github/actions/plan-gate
+        with:
+          plan-json: ${{ runner.temp }}/plano.json
+          # A aprovação é um label no pull request. Para o gate reagir a ele,
+          # o chamador precisa disparar também em `labeled` e `unlabeled`.
+          approved: ${{ contains(github.event.pull_request.labels.*.name, 'destruicao-aprovada') }}
+
+      - name: Apaga o plano (carrega o state em texto puro)
+        if: always()
+        run: rm -f "$RUNNER_TEMP/plano.tfplan" "$RUNNER_TEMP/plano.json"

@@ -1,0 +1,20 @@
+# Exemplo: o que um projeto consumidor escreve. É só uma chamada.
+#
+# `labeled` e `unlabeled` fazem o gate rodar de novo quando alguém adiciona ou
+# remove o label `destruicao-aprovada`, que é como a recriação de um recurso
+# sensível é aprovada de forma explícita.
+name: Plan gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  plan-gate:
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@main
+    with:
+      working-directory: infra
+      versao: main
