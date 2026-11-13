@@ -5,6 +5,12 @@ versões em [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [2.0.0] - 2026-11-13
+
+Major por duas quebras de contrato (veja "Alterado"). Para migrar do `v1`: troque
+`@v1` por `@v2`, adicione `id-token: write` às `permissions` do chamador e
+confira se os módulos têm as tags de `config/tag-policy.json`.
+
 ### Adicionado
 - OIDC nos workflows `plan-gate.yml` e `apply.yml`: inputs `aws-role-arn` e
   `aws-region` assumem a role da AWS com token de curta duração, sem chave

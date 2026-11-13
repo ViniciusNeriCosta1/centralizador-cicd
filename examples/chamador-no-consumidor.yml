@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   plan-gate:
-    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v1
+    uses: ViniciusNeriCosta1/centralizador-cicd/.github/workflows/plan-gate.yml@v2
     with:
       working-directory: infra
       # Para módulos na AWS: role só de leitura (veja aws-oidc-trust.tf).
